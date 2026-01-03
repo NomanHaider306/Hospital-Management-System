@@ -1,0 +1,3 @@
+Ali	1234	3PM	5PM	Monday to Sunday	General Medicine
+Hajra	1234	7PM	9PM	Monday to Sunday	General Medicine
+Nomi	123	1PM	3PM	Monday	General Medicine
