@@ -1,3 +1,1 @@
-Umair
-Tayyab
-Noman
+Umair	pharm123	umair.pharmacy@hospital.com	+92-333-7777777	Hospital Pharmacy Wing

@@ -1,4 +1,4 @@
-Captopril	Rs.200	50	20
+Captopril	240	50	20
 Esomeprazole	Rs.250	50	20
 Furosemide	Rs.275	50	20
 Metoclopramide	Rs.300	50	20

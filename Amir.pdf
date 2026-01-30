@@ -1,0 +1,99 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length 976 >> stream
+q
+0.9 0.9 0.9 rg
+50 730 512 50 re f
+Q
+0.5 w
+50 730 512 50 re S
+BT
+/F1 20 Tf
+60 755 Td
+(MEDICAL INVOICE) Tj
+/F1 10 Tf
+380 0 Td
+(INV-202601282116) Tj
+ET
+BT
+/F1 11 Tf
+60 705 Td
+(PATIENT INFORMATION) Tj
+/F1 10 Tf
+0 -20 Td
+(   Name: Amir) Tj
+0 -15 Td
+(   Date: 2026-01-28 21:16) Tj
+ET
+60 655 m 552 655 l S
+q
+0.95 0.95 0.95 rg
+60 615 492 25 re f
+Q
+60 615 492 25 re S
+BT
+/F1 11 Tf
+70 622 Td
+(DESCRIPTION) Tj
+370 0 Td
+(AMOUNT \(Rs.\)) Tj
+ET
+60 590 492 25 re S
+BT
+/F1 10 Tf
+70 597 Td
+(   Consultation Fee) Tj
+415 0 Td
+(Rs.1500) Tj
+ET
+60 565 492 25 re S
+BT
+/F1 10 Tf
+70 572 Td
+(   Medicine Charges) Tj
+415 0 Td
+(Rs.0) Tj
+ET
+2 w
+60 565 m 552 565 l S
+0.5 w
+q
+0.95 0.95 1 rg
+60 530 492 30 re f
+Q
+60 530 492 30 re S
+BT
+/F1 14 Tf
+70 540 Td
+(TOTAL AMOUNT DUE) Tj
+320 0 Td
+(Rs.1500) Tj
+ET
+BT
+/F1 9 Tf
+0.4 0.4 0.4 rg
+60 505 Td
+(Payment Terms: Due upon receipt) Tj
+0 -15 Td
+(Thank you for trusting us with your healthcare needs.) Tj
+0 -12 Td
+(Please retain this invoice for your records.) Tj
+ET
+
+endstream
+endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001268 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+1338
+%%EOF

@@ -1,3 +1,4 @@
-Ali	1234	3PM	5PM	Monday to Sunday	General Medicine
-Hajra	1234	7PM	9PM	Monday to Sunday	General Medicine
-Nomi	123	1PM	3PM	Monday	General Medicine
+Ali	1234	dr.ali@hospital.com	+92-300-1234567	123 Medical Plaza, Karachi	MBBS, FCPS (Cardiology)	2PM	4PM	Monday to Friday	Cardiology
+Hajra	1234	dr.hajra@hospital.com	+92-321-9876543	456 Health Center, Lahore	MBBS, MRCP (Endocrinology)	7PM	9PM	Monday to Sunday	Endocrinology
+Muhammad Tayyab	1234	tu@gmail.com	030324234234	lahore	MBBS	1pm	5pm	3	Hear
+Azhar	1234	azhar@hospital.com	+92-301-1234567	Hospital community	FCPS	3PM	6PM	Monday to Wednesday	Child Specialist

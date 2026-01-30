@@ -1,0 +1,160 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length 1732 >> stream
+q
+0.9 0.95 0.9 rg
+50 730 512 50 re f
+Q
+0.5 w
+50 730 512 50 re S
+BT
+/F1 20 Tf
+60 755 Td
+(MONTHLY REVENUE REPORT) Tj
+/F1 10 Tf
+360 0 Td
+(REV-202601282123) Tj
+ET
+BT
+/F1 11 Tf
+60 705 Td
+(REPORT DETAILS) Tj
+/F1 10 Tf
+0 -20 Td
+(   Generated: 2026-01-28 21:23) Tj
+0 -15 Td
+(   Period: All Time) Tj
+ET
+60 655 m 552 655 l S
+BT
+/F1 12 Tf
+60 630 Td
+(APPOINTMENT STATISTICS) Tj
+ET
+q
+0.98 0.98 0.98 rg
+60 530 492 75 re f
+Q
+60 530 492 75 re S
+BT
+/F1 10 Tf
+70 587 Td
+(   Total Completed Appointments:) Tj
+300 0 Td
+(1) Tj
+-300 -20 Td
+(   Regular Appointments:) Tj
+300 0 Td
+(1) Tj
+-300 -20 Td
+(   Emergency Appointments:) Tj
+300 0 Td
+(0) Tj
+ET
+BT
+/F1 12 Tf
+60 510 Td
+(REVENUE BREAKDOWN) Tj
+ET
+q
+0.95 0.95 0.95 rg
+60 460 492 25 re f
+Q
+60 460 492 25 re S
+BT
+/F1 11 Tf
+70 467 Td
+(CATEGORY) Tj
+350 0 Td
+(AMOUNT \(Rs.\)) Tj
+ET
+60 435 492 25 re S
+BT
+/F1 10 Tf
+70 442 Td
+(   Regular Consultations \(1\)) Tj
+365 0 Td
+(Rs.1500) Tj
+ET
+60 410 492 25 re S
+BT
+/F1 10 Tf
+70 417 Td
+(   Emergency Consultations \(0\)) Tj
+365 0 Td
+(Rs.0) Tj
+ET
+60 385 492 25 re S
+BT
+/F1 10 Tf
+70 392 Td
+(   Medicine Sales \(estimated\)) Tj
+365 0 Td
+(Rs.500) Tj
+ET
+2 w
+60 385 m 552 385 l S
+0.5 w
+q
+0.9 1 0.9 rg
+60 345 492 35 re f
+Q
+60 345 492 35 re S
+BT
+/F1 16 Tf
+70 357 Td
+(TOTAL REVENUE) Tj
+280 0 Td
+(Rs.2000) Tj
+ET
+BT
+/F1 11 Tf
+60 315 Td
+(REVENUE DISTRIBUTION) Tj
+ET
+q
+0.3 0.6 0.9 rg
+70 275 262 15 re f
+Q
+BT
+/F1 9 Tf
+75 281 Td
+(Consultations 75%) Tj
+ET
+q
+0.3 0.8 0.5 rg
+70 250 87 15 re f
+Q
+BT
+/F1 9 Tf
+75 256 Td
+(Medicines 25%) Tj
+ET
+BT
+/F1 9 Tf
+0.4 0.4 0.4 rg
+60 225 Td
+(This report is generated automatically by the Hospital Management System.) Tj
+0 -15 Td
+(For detailed analysis, please consult the finance department.) Tj
+0 -12 Td
+(Confidential - For internal use only.) Tj
+ET
+
+endstream
+endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000002025 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+2095
+%%EOF

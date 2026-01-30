@@ -28,8 +28,12 @@ const string PHARMACISTS_FILE = "pharmacists.txt";
 const string MEDICINES_FILE = "medicines.txt";
 const string PATIENT_HISTORY_FILE = "patient_history.txt";
 const string DOCTOR_REQUESTS_FILE = "doctor_requests.txt";
+const string DOCTOR_RATINGS_FILE = "doctor_ratings.txt";
+const string MEDICINE_EXPIRY_FILE = "medicine_expiry.txt";
+const string REVENUE_FILE = "revenue.txt";
 const int APPOINTMENT_SLOT_MINUTES = 15;
 const int CONSULTATION_FEE = 1500;
+const int EMERGENCY_CONSULTATION_FEE = 2500;
 
 int SplitFields(const string &line, string fields[], int maxFields)
 {
@@ -496,6 +500,277 @@ bool GeneratePatientBillPDF(const string &patientName,
     return true;
 }
 
+// Generate Revenue Report PDF
+bool GenerateRevenueReportPDF(const StrArray &appointmentStatus, const StrArray &appointmentDate,
+                              const StrArray &appointmentEmergency, int appointmentCount)
+{
+    int completedAppointments = 0;
+    int emergencyAppointments = 0;
+    int regularAppointments = 0;
+    int consultationRevenue = 0;
+    int emergencyRevenue = 0;
+    int medicineRevenue = 0; // Estimated
+    
+    for (int i = 0; i < appointmentCount; i++)
+    {
+        if (appointmentStatus[i] == "Completed" || appointmentStatus[i] == "completed" || 
+            appointmentStatus[i] == "Emergency-Completed")
+        {
+            completedAppointments++;
+            bool isEmergency = (appointmentEmergency[i] == "Yes");
+            if (isEmergency)
+            {
+                emergencyAppointments++;
+                emergencyRevenue += EMERGENCY_CONSULTATION_FEE;
+                consultationRevenue += EMERGENCY_CONSULTATION_FEE;
+            }
+            else
+            {
+                regularAppointments++;
+                consultationRevenue += CONSULTATION_FEE;
+            }
+        }
+    }
+    
+    // Estimated medicine revenue (33% of consultation revenue)
+    medicineRevenue = consultationRevenue / 3;
+    int totalRevenue = consultationRevenue + medicineRevenue;
+    
+    auto formatCurrency = [](int value) {
+        return string("Rs.") + to_string(value);
+    };
+    
+    time_t now = time(nullptr);
+    tm localTime = {};
+#ifdef _WIN32
+    localtime_s(&localTime, &now);
+#else
+    localTime = *localtime(&now);
+#endif
+    ostringstream dateStream;
+    dateStream << put_time(&localTime, "%Y-%m-%d %H:%M");
+    string generatedOn = dateStream.str();
+    
+    ostringstream reportStream;
+    reportStream << "REV-" << put_time(&localTime, "%Y%m%d%H%M");
+    string reportId = reportStream.str();
+    
+    ostringstream content;
+    
+    // Draw header box
+    content << "q\n";
+    content << "0.9 0.95 0.9 rg\n";
+    content << "50 730 512 50 re f\n";
+    content << "Q\n";
+    content << "0.5 w\n";
+    content << "50 730 512 50 re S\n";
+    
+    // Header text
+    content << "BT\n";
+    content << "/F1 20 Tf\n";
+    content << "60 755 Td\n(" << EscapePDFText("MONTHLY REVENUE REPORT") << ") Tj\n";
+    content << "/F1 10 Tf\n";
+    content << "360 0 Td\n(" << EscapePDFText(reportId) << ") Tj\n";
+    content << "ET\n";
+    
+    // Report info section
+    content << "BT\n";
+    content << "/F1 11 Tf\n";
+    content << "60 705 Td\n(" << EscapePDFText("REPORT DETAILS") << ") Tj\n";
+    content << "/F1 10 Tf\n";
+    content << "0 -20 Td\n(" << EscapePDFText("   Generated: " + generatedOn) << ") Tj\n";
+    content << "0 -15 Td\n(" << EscapePDFText("   Period: All Time") << ") Tj\n";
+    content << "ET\n";
+    
+    // Draw horizontal line
+    content << "60 655 m 552 655 l S\n";
+    
+    // Statistics section
+    content << "BT\n";
+    content << "/F1 12 Tf\n";
+    content << "60 630 Td\n(" << EscapePDFText("APPOINTMENT STATISTICS") << ") Tj\n";
+    content << "ET\n";
+    
+    int yPos = 605;
+    
+    // Stats box
+    content << "q\n";
+    content << "0.98 0.98 0.98 rg\n";
+    content << "60 " << (yPos - 75) << " 492 75 re f\n";
+    content << "Q\n";
+    content << "60 " << (yPos - 75) << " 492 75 re S\n";
+    
+    content << "BT\n";
+    content << "/F1 10 Tf\n";
+    content << "70 " << (yPos - 18) << " Td\n(" << EscapePDFText("   Total Completed Appointments:") << ") Tj\n";
+    content << "300 0 Td\n(" << EscapePDFText(to_string(completedAppointments)) << ") Tj\n";
+    content << "-300 -20 Td\n(" << EscapePDFText("   Regular Appointments:") << ") Tj\n";
+    content << "300 0 Td\n(" << EscapePDFText(to_string(regularAppointments)) << ") Tj\n";
+    content << "-300 -20 Td\n(" << EscapePDFText("   Emergency Appointments:") << ") Tj\n";
+    content << "300 0 Td\n(" << EscapePDFText(to_string(emergencyAppointments)) << ") Tj\n";
+    content << "ET\n";
+    
+    yPos -= 95;
+    
+    // Revenue breakdown section
+    content << "BT\n";
+    content << "/F1 12 Tf\n";
+    content << "60 " << yPos << " Td\n(" << EscapePDFText("REVENUE BREAKDOWN") << ") Tj\n";
+    content << "ET\n";
+    yPos -= 25;
+    
+    // Revenue table header
+    content << "q\n";
+    content << "0.95 0.95 0.95 rg\n";
+    content << "60 " << (yPos - 25) << " 492 25 re f\n";
+    content << "Q\n";
+    content << "60 " << (yPos - 25) << " 492 25 re S\n";
+    
+    content << "BT\n";
+    content << "/F1 11 Tf\n";
+    content << "70 " << (yPos - 18) << " Td\n(" << EscapePDFText("CATEGORY") << ") Tj\n";
+    content << "350 0 Td\n(" << EscapePDFText("AMOUNT (Rs.)") << ") Tj\n";
+    content << "ET\n";
+    yPos -= 25;
+    
+    // Regular consultation row
+    content << "60 " << (yPos - 25) << " 492 25 re S\n";
+    content << "BT\n";
+    content << "/F1 10 Tf\n";
+    content << "70 " << (yPos - 18) << " Td\n(" << EscapePDFText("   Regular Consultations (" + to_string(regularAppointments) + ")") << ") Tj\n";
+    content << "365 0 Td\n(" << EscapePDFText(formatCurrency(regularAppointments * CONSULTATION_FEE)) << ") Tj\n";
+    content << "ET\n";
+    yPos -= 25;
+    
+    // Emergency consultation row
+    content << "60 " << (yPos - 25) << " 492 25 re S\n";
+    content << "BT\n";
+    content << "/F1 10 Tf\n";
+    content << "70 " << (yPos - 18) << " Td\n(" << EscapePDFText("   Emergency Consultations (" + to_string(emergencyAppointments) + ")") << ") Tj\n";
+    content << "365 0 Td\n(" << EscapePDFText(formatCurrency(emergencyRevenue)) << ") Tj\n";
+    content << "ET\n";
+    yPos -= 25;
+    
+    // Medicine sales row
+    content << "60 " << (yPos - 25) << " 492 25 re S\n";
+    content << "BT\n";
+    content << "/F1 10 Tf\n";
+    content << "70 " << (yPos - 18) << " Td\n(" << EscapePDFText("   Medicine Sales (estimated)") << ") Tj\n";
+    content << "365 0 Td\n(" << EscapePDFText(formatCurrency(medicineRevenue)) << ") Tj\n";
+    content << "ET\n";
+    yPos -= 25;
+    
+    // Draw thick line before total
+    content << "2 w\n";
+    content << "60 " << yPos << " m 552 " << yPos << " l S\n";
+    content << "0.5 w\n";
+    yPos -= 5;
+    
+    // Total section with highlight
+    content << "q\n";
+    content << "0.9 1 0.9 rg\n";
+    content << "60 " << (yPos - 35) << " 492 35 re f\n";
+    content << "Q\n";
+    content << "60 " << (yPos - 35) << " 492 35 re S\n";
+    
+    content << "BT\n";
+    content << "/F1 16 Tf\n";
+    content << "70 " << (yPos - 23) << " Td\n(" << EscapePDFText("TOTAL REVENUE") << ") Tj\n";
+    content << "280 0 Td\n(" << EscapePDFText(formatCurrency(totalRevenue)) << ") Tj\n";
+    content << "ET\n";
+    yPos -= 35;
+    
+    // Revenue distribution visualization
+    yPos -= 30;
+    content << "BT\n";
+    content << "/F1 11 Tf\n";
+    content << "60 " << yPos << " Td\n(" << EscapePDFText("REVENUE DISTRIBUTION") << ") Tj\n";
+    content << "ET\n";
+    yPos -= 20;
+    
+    // Simple bar chart representation
+    int consultationPercent = (totalRevenue > 0) ? (consultationRevenue * 100 / totalRevenue) : 0;
+    int medicinePercent = 100 - consultationPercent;
+    
+    // Consultation bar
+    content << "q\n";
+    content << "0.3 0.6 0.9 rg\n";
+    int consultationBarWidth = (consultationPercent * 350) / 100;
+    content << "70 " << (yPos - 20) << " " << consultationBarWidth << " 15 re f\n";
+    content << "Q\n";
+    
+    content << "BT\n";
+    content << "/F1 9 Tf\n";
+    content << "75 " << (yPos - 14) << " Td\n(" << EscapePDFText("Consultations " + to_string(consultationPercent) + "%") << ") Tj\n";
+    content << "ET\n";
+    yPos -= 25;
+    
+    // Medicine bar
+    content << "q\n";
+    content << "0.3 0.8 0.5 rg\n";
+    int medicineBarWidth = (medicinePercent * 350) / 100;
+    content << "70 " << (yPos - 20) << " " << medicineBarWidth << " 15 re f\n";
+    content << "Q\n";
+    
+    content << "BT\n";
+    content << "/F1 9 Tf\n";
+    content << "75 " << (yPos - 14) << " Td\n(" << EscapePDFText("Medicines " + to_string(medicinePercent) + "%") << ") Tj\n";
+    content << "ET\n";
+    yPos -= 40;
+    
+    // Footer section
+    content << "BT\n";
+    content << "/F1 9 Tf\n";
+    content << "0.4 0.4 0.4 rg\n";
+    content << "60 " << (yPos - 5) << " Td\n(" << EscapePDFText("This report is generated automatically by the Hospital Management System.") << ") Tj\n";
+    content << "0 -15 Td\n(" << EscapePDFText("For detailed analysis, please consult the finance department.") << ") Tj\n";
+    content << "0 -12 Td\n(" << EscapePDFText("Confidential - For internal use only.") << ") Tj\n";
+    content << "ET\n";
+    
+    string contentStr = content.str();
+    
+    ostringstream pdf;
+    pdf << "%PDF-1.4\n";
+    long long offsets[6] = {};
+    
+    offsets[1] = static_cast<long long>(pdf.tellp());
+    pdf << "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n";
+    offsets[2] = static_cast<long long>(pdf.tellp());
+    pdf << "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n";
+    offsets[3] = static_cast<long long>(pdf.tellp());
+    pdf << "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n";
+    offsets[4] = static_cast<long long>(pdf.tellp());
+    pdf << "4 0 obj << /Length " << contentStr.size() << " >> stream\n" << contentStr << "\nendstream\nendobj\n";
+    offsets[5] = static_cast<long long>(pdf.tellp());
+    pdf << "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n";
+    
+    long long xrefPos = static_cast<long long>(pdf.tellp());
+    pdf << "xref\n0 6\n0000000000 65535 f \n";
+    pdf << setfill('0');
+    for (int i = 1; i <= 5; i++)
+    {
+        pdf << setw(10) << offsets[i] << " 00000 n \n";
+    }
+    pdf << setfill(' ');
+    pdf << "trailer << /Size 6 /Root 1 0 R >>\n";
+    pdf << "startxref\n" << xrefPos << "\n%%EOF";
+    
+    ostringstream fileNameStream;
+    fileNameStream << "Revenue_Report_" << put_time(&localTime, "%Y%m%d_%H%M%S") << ".pdf";
+    string fileName = fileNameStream.str();
+    
+    ofstream out(fileName, ios::binary);
+    if (!out.is_open())
+    {
+        cerr << "Unable to create revenue report file." << endl;
+        return false;
+    }
+    
+    out << pdf.str();
+    cout << "Revenue report saved as " << fileName << endl;
+    return true;
+}
+
 // ============== UI HELPER FUNCTIONS ==============
 
 // Setup console for UTF-8 and colors
@@ -557,6 +832,83 @@ void useMagentaColour()
 {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     SetConsoleTextAttribute(hConsole, 13);
+}
+
+// Safe integer input with validation
+int SafeIntInput(const string &message, int minValue = INT_MIN, int maxValue = INT_MAX)
+{
+    int value;
+    while (true)
+    {
+        cout << message;
+        if (cin >> value)
+        {
+            // Check if the value is within the specified range
+            if (value >= minValue && value <= maxValue)
+            {
+                cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Clear the buffer
+                return value;
+            }
+            else
+            {
+                useRedColour();
+                cout << "❌ Invalid input! Please enter a number between " << minValue << " and " << maxValue << "." << endl;
+                useWhiteColour();
+            }
+        }
+        else
+        {
+            // Handle non-integer input
+            useRedColour();
+            cout << "❌ Invalid input! Please enter a valid integer." << endl;
+            useWhiteColour();
+            cin.clear(); // Clear the error flag
+            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard invalid input
+        }
+    }
+}
+
+// Safe character input with validation
+char SafeCharInput(const string &message, const string &validChars = "")
+{
+    char value;
+    string input;
+    while (true)
+    {
+        cout << message;
+        if (cin >> input)
+        {
+            if (input.length() == 1)
+            {
+                value = input[0];
+                if (validChars.empty() || validChars.find(toupper(value)) != string::npos)
+                {
+                    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                    return value;
+                }
+                else
+                {
+                    useRedColour();
+                    cout << "❌ Invalid input! Please enter one of: " << validChars << endl;
+                    useWhiteColour();
+                }
+            }
+            else
+            {
+                useRedColour();
+                cout << "❌ Invalid input! Please enter a single character." << endl;
+                useWhiteColour();
+            }
+        }
+        else
+        {
+            useRedColour();
+            cout << "❌ Invalid input! Please try again." << endl;
+            useWhiteColour();
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        }
+    }
 }
 
 // Display success message
@@ -627,7 +979,7 @@ void drawTableFooter()
 // Display menu box
 void displayMenuBox(const string &title, const string options[], int optionCount, bool hasExit = true)
 {
-    const int BOX_WIDTH = 59;
+    const int BOX_WIDTH = 70;
     useCyanColour();
     cout << "\n╔";
     for (int i = 0; i < BOX_WIDTH; i++) cout << "═";
@@ -635,12 +987,14 @@ void displayMenuBox(const string &title, const string options[], int optionCount
     
     // Title
     useMagentaColour();
-    int titlePadding = (BOX_WIDTH - static_cast<int>(title.length())) / 2;
+    useCyanColour();
     cout << "║";
+    useMagentaColour();
+    int titlePadding = (BOX_WIDTH - static_cast<int>(title.length())) / 2;
     cout << string(titlePadding, ' ') << title << string(BOX_WIDTH - titlePadding - title.length(), ' ');
+    useCyanColour();
     cout << "║" << endl;
     
-    useCyanColour();
     cout << "╠";
     for (int i = 0; i < BOX_WIDTH; i++) cout << "═";
     cout << "╣" << endl;
@@ -648,6 +1002,9 @@ void displayMenuBox(const string &title, const string options[], int optionCount
     // Options
     for (int i = 0; i < optionCount; i++)
     {
+        useCyanColour();
+        cout << "║";
+        
         if (hasExit && i == optionCount - 1)
             useRedColour();
         else
@@ -655,10 +1012,11 @@ void displayMenuBox(const string &title, const string options[], int optionCount
         
         string optionText = "  [" + to_string(i + 1) + "] ► " + options[i];
         int contentWidth = static_cast<int>(optionText.length());
-        cout << "║" << left << optionText << string(BOX_WIDTH - contentWidth, ' ') << "║" << endl;
+        cout << left << optionText << string(BOX_WIDTH - contentWidth, ' ');
+        useCyanColour();
+        cout << "║" << endl;
     }
     
-    useCyanColour();
     cout << "╚";
     for (int i = 0; i < BOX_WIDTH; i++) cout << "═";
     cout << "╝" << endl;
@@ -792,6 +1150,551 @@ void printHeader()
 
 // ============== END OF UI HELPER FUNCTIONS ==============
 
+// Forward declarations
+void clearScreen();
+
+// ============== NEW FEATURE FUNCTIONS ==============
+
+// Get current date in YYYY-MM-DD format
+string getCurrentDate()
+{
+    time_t now = time(0);
+    tm *ltm = localtime(&now);
+    char buffer[11];
+    sprintf(buffer, "%04d-%02d-%02d", 1900 + ltm->tm_year, 1 + ltm->tm_mon, ltm->tm_mday);
+    return string(buffer);
+}
+
+// Calculate days between two dates (simple implementation)
+int daysBetweenDates(const string &date1, const string &date2)
+{
+    // Simple calculation - assumes format YYYY-MM-DD
+    int year1, month1, day1, year2, month2, day2;
+    sscanf(date1.c_str(), "%d-%d-%d", &year1, &month1, &day1);
+    sscanf(date2.c_str(), "%d-%d-%d", &year2, &month2, &day2);
+    
+    int days1 = year1 * 365 + month1 * 30 + day1;
+    int days2 = year2 * 365 + month2 * 30 + day2;
+    return days2 - days1;
+}
+
+// Display table header
+void displayTableHeader(const string &col1, const string &col2, const string &col3, const string &col4, int width)
+{
+    useCyanColour();
+    cout << "╔";
+    for (int i = 0; i < width; i++) cout << "═";
+    cout << "╗" << endl;
+    
+    cout << "║ " << left << setw(12) << col1 << " │ " << setw(15) << col2 << " │ " 
+         << setw(12) << col3 << " │ " << setw(10) << col4 << " ║" << endl;
+    
+    cout << "╠";
+    for (int i = 0; i < width; i++) cout << "═";
+    cout << "╣" << endl;
+    useWhiteColour();
+}
+
+// Display table row
+void displayTableRow(const string &col1, const string &col2, const string &col3, const string &col4)
+{
+    useCyanColour();
+    cout << "║ ";
+    useWhiteColour();
+    cout << left << setw(12) << col1;
+    useCyanColour();
+    cout << " │ ";
+    useWhiteColour();
+    cout << setw(15) << col2;
+    useCyanColour();
+    cout << " │ ";
+    useWhiteColour();
+    cout << setw(12) << col3;
+    useCyanColour();
+    cout << " │ ";
+    useWhiteColour();
+    cout << setw(10) << col4;
+    useCyanColour();
+    cout << " ║" << endl;
+    useWhiteColour();
+}
+
+// Close table
+void closeTable(int width)
+{
+    useCyanColour();
+    cout << "╚";
+    for (int i = 0; i < width; i++) cout << "═";
+    cout << "╝" << endl;
+    useWhiteColour();
+}
+
+// Display progress bar
+void displayProgressBar(const string &label, int current, int total, int barWidth = 20)
+{
+    cout << label << " [";
+    useGreenColour();
+    int filled = (current * barWidth) / total;
+    for (int i = 0; i < barWidth; i++)
+    {
+        if (i < filled) cout << "█";
+        else
+        {
+            useCyanColour();
+            cout << "░";
+        }
+    }
+    useWhiteColour();
+    cout << "] " << current << "/" << total;
+    if (total > 0)
+    {
+        int percent = (current * 100) / total;
+        cout << " (" << percent << "%)";
+    }
+    cout << endl;
+}
+
+// Patient Appointment History Dashboard
+void showPatientHistory(const string &patientName, const StrArray &appointmentPatient, const StrArray &appointmentDoctor,
+                        const StrArray &appointmentDate, const StrArray &appointmentTime, const StrArray &appointmentStatus,
+                        const StrArray &appointmentEmergency, int appointmentCount)
+{
+    clearScreen();
+    printHeader();
+    
+    useGreenColour();
+    cout << "\n════════════════════════════════════════════════════════════════" << endl;
+    cout << "           📋 YOUR APPOINTMENT HISTORY" << endl;
+    cout << "════════════════════════════════════════════════════════════════" << endl;
+    useWhiteColour();
+    
+    int patientAppointments = 0;
+    int totalSpent = 0;
+    string mostVisitedDoctor;
+    int maxVisits = 0;
+    
+    // Count doctor visits
+    string doctorNames[UserSize];
+    int doctorVisits[UserSize] = {0};
+    int uniqueDoctors = 0;
+    
+    // Display table
+    displayTableHeader("Date", "Doctor", "Status", "Amount", 68);
+    
+    for (int i = 0; i < appointmentCount; i++)
+    {
+        if (appointmentPatient[i] == patientName)
+        {
+            patientAppointments++;
+            string status = appointmentStatus[i];
+            bool isEmergency = (appointmentEmergency[i] == "Yes");
+            int amount = 0;
+            if (status == "Completed" || status == "completed" || status == "Emergency-Completed")
+            {
+                amount = isEmergency ? EMERGENCY_CONSULTATION_FEE : CONSULTATION_FEE;
+            }
+            totalSpent += amount;
+            
+            // Count doctor visits
+            bool found = false;
+            for (int j = 0; j < uniqueDoctors; j++)
+            {
+                if (doctorNames[j] == appointmentDoctor[i])
+                {
+                    doctorVisits[j]++;
+                    found = true;
+                    if (doctorVisits[j] > maxVisits)
+                    {
+                        maxVisits = doctorVisits[j];
+                        mostVisitedDoctor = appointmentDoctor[i];
+                    }
+                    break;
+                }
+            }
+            if (!found && uniqueDoctors < UserSize)
+            {
+                doctorNames[uniqueDoctors] = appointmentDoctor[i];
+                doctorVisits[uniqueDoctors] = 1;
+                if (1 > maxVisits)
+                {
+                    maxVisits = 1;
+                    mostVisitedDoctor = appointmentDoctor[i];
+                }
+                uniqueDoctors++;
+            }
+            
+            string amountStr = (amount > 0) ? ("Rs." + to_string(amount)) : "-";
+            string doctorDisplay = appointmentDoctor[i];
+            if (isEmergency) {
+                doctorDisplay = "🚨 " + doctorDisplay;
+            }
+            displayTableRow(appointmentDate[i], doctorDisplay, status, amountStr);
+        }
+    }
+    
+    closeTable(68);
+    
+    // Display statistics
+    useYellowColour();
+    cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
+    useGreenColour();
+    cout << "📊 Statistics: ";
+    useWhiteColour();
+    cout << "Total Visits: ";
+    useMagentaColour();
+    cout << patientAppointments;
+    useWhiteColour();
+    cout << "  |  Most Visited: ";
+    useMagentaColour();
+    cout << (mostVisitedDoctor.empty() ? "N/A" : mostVisitedDoctor);
+    useWhiteColour();
+    cout << "  |  Total Spent: ";
+    useGreenColour();
+    cout << "Rs." << totalSpent << endl;
+    useYellowColour();
+    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
+    useWhiteColour();
+    
+    cout << "\nPress any key to continue...";
+    _getch();
+}
+
+// Appointment Reminder System
+void showUpcomingAppointments(const string &patientName, const StrArray &appointmentPatient,
+                               const StrArray &appointmentDoctor, const StrArray &appointmentDate,
+                               const StrArray &appointmentTime, const StrArray &appointmentStatus,
+                               int appointmentCount)
+{
+    string today = getCurrentDate();
+    bool hasReminders = false;
+    
+    useYellowColour();
+    cout << "\n🔔 UPCOMING APPOINTMENTS" << endl;
+    useCyanColour();
+    cout << "════════════════════════════════════════════════════════════" << endl;
+    useWhiteColour();
+    
+    for (int i = 0; i < appointmentCount; i++)
+    {
+        if (appointmentPatient[i] == patientName && appointmentStatus[i] == "Pending")
+        {
+            int daysUntil = daysBetweenDates(today, appointmentDate[i]);
+            if (daysUntil >= 0 && daysUntil <= 7)
+            {
+                hasReminders = true;
+                if (daysUntil == 0)
+                {
+                    useRedColour();
+                    cout << "🔴 TODAY: ";
+                }
+                else if (daysUntil == 1)
+                {
+                    useYellowColour();
+                    cout << "⚠️  Tomorrow: ";
+                }
+                else
+                {
+                    useGreenColour();
+                    cout << "📅 In " << daysUntil << " days: ";
+                }
+                useWhiteColour();
+                cout << "Appointment with " << appointmentDoctor[i] 
+                     << " at " << appointmentTime[i] << endl;
+            }
+        }
+    }
+    
+    if (!hasReminders)
+    {
+        useGreenColour();
+        cout << "✓ No upcoming appointments in the next 7 days." << endl;
+    }
+    
+    useCyanColour();
+    cout << "════════════════════════════════════════════════════════════" << endl;
+    useWhiteColour();
+}
+
+// Doctor Performance Dashboard
+void showDoctorPerformance(const string &doctorName, const StrArray &appointmentDoctor,
+                           const StrArray &appointmentDate, const StrArray &appointmentStatus,
+                           int appointmentCount)
+{
+    clearScreen();
+    printHeader();
+    
+    useMagentaColour();
+    cout << "\n════════════════════════════════════════════════════════════" << endl;
+    cout << "        👨‍⚕️ DOCTOR PERFORMANCE DASHBOARD" << endl;
+    cout << "════════════════════════════════════════════════════════════" << endl;
+    useWhiteColour();
+    
+    string today = getCurrentDate();
+    int patientsToday = 0;
+    int patientsThisWeek = 0;
+    int completedAppointments = 0;
+    int totalAppointments = 0;
+    
+    for (int i = 0; i < appointmentCount; i++)
+    {
+        if (appointmentDoctor[i] == doctorName)
+        {
+            totalAppointments++;
+            if (appointmentStatus[i] == "Completed" || appointmentStatus[i] == "completed")
+            {
+                completedAppointments++;
+            }
+            
+            int daysAgo = daysBetweenDates(appointmentDate[i], today);
+            if (daysAgo == 0) patientsToday++;
+            if (daysAgo >= 0 && daysAgo <= 7) patientsThisWeek++;
+        }
+    }
+    
+    int workloadPercent = (totalAppointments > 0) ? (patientsThisWeek * 10) : 0;
+    if (workloadPercent > 100) workloadPercent = 100;
+    
+    useGreenColour();
+    cout << "\nDoctor: ";
+    useMagentaColour();
+    cout << doctorName << endl;
+    useWhiteColour();
+    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
+    
+    useYellowColour();
+    cout << "\n📊 Performance Metrics:" << endl;
+    useWhiteColour();
+    cout << "  • Patients Today:        " << patientsToday << endl;
+    cout << "  • Patients This Week:    " << patientsThisWeek << endl;
+    cout << "  • Total Appointments:    " << totalAppointments << endl;
+    cout << "  • Completed:             " << completedAppointments << endl;
+    
+    cout << "\n";
+    displayProgressBar("  Weekly Workload", patientsThisWeek, 50);
+    
+    useWhiteColour();
+    cout << "\nPress any key to continue...";
+    _getch();
+}
+
+// Medicine Low Stock Alert
+void checkLowStockMedicines(const StrArray &Medicines, const IntArray &MedicineStock,
+                            const IntArray &MedicineReorderLevel, int MedicineCount)
+{
+    int lowStockCount = 0;
+    
+    for (int i = 0; i < MedicineCount; i++)
+    {
+        if (MedicineStock[i] < MedicineReorderLevel[i])
+        {
+            lowStockCount++;
+        }
+    }
+    
+    if (lowStockCount > 0)
+    {
+        useRedColour();
+        cout << "\n⚠️  ALERT: " << lowStockCount << " medicine(s) need reordering!" << endl;
+        useWhiteColour();
+    }
+}
+
+// Display Low Stock Medicines
+void displayLowStockReport(const StrArray &Medicines, const IntArray &MedicineStock,
+                           const IntArray &MedicineReorderLevel, int MedicineCount)
+{
+    clearScreen();
+    printHeader();
+    
+    useRedColour();
+    cout << "\n════════════════════════════════════════════════════════════" << endl;
+    cout << "        ⚠️  LOW STOCK MEDICINES REPORT" << endl;
+    cout << "════════════════════════════════════════════════════════════" << endl;
+    useWhiteColour();
+    
+    bool foundLowStock = false;
+    
+    useCyanColour();
+    cout << "\n╔════════════════════════════════════════════════════════╗" << endl;
+    cout << "║ Medicine Name       │ Current Stock │ Reorder Level  ║" << endl;
+    cout << "╠════════════════════════════════════════════════════════╣" << endl;
+    useWhiteColour();
+    
+    for (int i = 0; i < MedicineCount; i++)
+    {
+        if (MedicineStock[i] < MedicineReorderLevel[i])
+        {
+            foundLowStock = true;
+            useCyanColour();
+            cout << "║ ";
+            useRedColour();
+            cout << left << setw(19) << Medicines[i];
+            useCyanColour();
+            cout << " │ ";
+            useWhiteColour();
+            cout << setw(13) << MedicineStock[i];
+            useCyanColour();
+            cout << " │ ";
+            useWhiteColour();
+            cout << setw(14) << MedicineReorderLevel[i];
+            useCyanColour();
+            cout << " ║" << endl;
+            useWhiteColour();
+        }
+    }
+    
+    if (!foundLowStock)
+    {
+        useGreenColour();
+        cout << "║           ✓ All medicines are adequately stocked          ║" << endl;
+    }
+    
+    useCyanColour();
+    cout << "╚════════════════════════════════════════════════════════╝" << endl;
+    useWhiteColour();
+    
+    cout << "\nPress any key to continue...";
+    _getch();
+}
+
+// Quick Stats Dashboard
+void displayQuickStats(int patientCount, int appointmentCount, int doctorCount, int medicineCount,
+                       const StrArray &appointmentStatus, int totalAppointments)
+{
+    int appointmentsToday = 0;
+    string today = getCurrentDate();
+    
+    useGreenColour();
+    cout << "\n╔═══════════════════════════════════════════════════════════════╗" << endl;
+    cout << "║                    📊 QUICK STATISTICS                        ║" << endl;
+    cout << "╚═══════════════════════════════════════════════════════════════╝" << endl;
+    useWhiteColour();
+    
+    useCyanColour();
+    cout << "  👥 Total Patients:      ";
+    useMagentaColour();
+    cout << patientCount << endl;
+    
+    useCyanColour();
+    cout << "  👨‍⚕️ Doctors Available:   ";
+    useMagentaColour();
+    cout << doctorCount << endl;
+    
+    useCyanColour();
+    cout << "  📅 Total Appointments:  ";
+    useMagentaColour();
+    cout << appointmentCount << endl;
+    
+    useCyanColour();
+    cout << "  💊 Medicines in Stock:  ";
+    useMagentaColour();
+    cout << medicineCount << endl;
+    useWhiteColour();
+    
+    cout << endl;
+}
+
+// Monthly Revenue Report
+void generateRevenueReport(const StrArray &appointmentStatus, const StrArray &appointmentDate,
+                           const StrArray &appointmentEmergency, int appointmentCount)
+{
+    clearScreen();
+    printHeader();
+    
+    useGreenColour();
+    cout << "\n════════════════════════════════════════════════════════════" << endl;
+    cout << "          💰 MONTHLY REVENUE REPORT" << endl;
+    cout << "════════════════════════════════════════════════════════════" << endl;
+    useWhiteColour();
+    
+    int completedAppointments = 0;
+    int emergencyAppointments = 0;
+    int totalRevenue = 0;
+    int emergencyRevenue = 0;
+    
+    for (int i = 0; i < appointmentCount; i++)
+    {
+        if (appointmentStatus[i] == "Completed" || appointmentStatus[i] == "completed" ||
+            appointmentStatus[i] == "Emergency-Completed")
+        {
+            completedAppointments++;
+            bool isEmergency = (appointmentEmergency[i] == "Yes");
+            if (isEmergency)
+            {
+                emergencyAppointments++;
+                emergencyRevenue += EMERGENCY_CONSULTATION_FEE;
+                totalRevenue += EMERGENCY_CONSULTATION_FEE;
+            }
+            else
+            {
+                totalRevenue += CONSULTATION_FEE;
+            }
+        }
+    }
+    
+    int medicineRevenue = totalRevenue / 3; // Estimated
+    int consultationRevenue = totalRevenue;
+    
+    useYellowColour();
+    cout << "\n📊 Revenue Breakdown:" << endl;
+    useWhiteColour();
+    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
+    
+    useCyanColour();
+    cout << "\n  Consultation Fees:  ";
+    useGreenColour();
+    cout << "Rs. " << consultationRevenue << endl;
+    
+    if (emergencyRevenue > 0)
+    {
+        useCyanColour();
+        cout << "    (Emergency: Rs. " << emergencyRevenue << ")" << endl;
+    }
+    
+    useCyanColour();
+    cout << "  Medicine Sales:     ";
+    useGreenColour();
+    cout << "Rs. " << medicineRevenue << " (estimated)" << endl;
+    
+    useCyanColour();
+    cout << "  ────────────────────────────" << endl;
+    cout << "  Total Revenue:      ";
+    useMagentaColour();
+    cout << "Rs. " << (consultationRevenue + medicineRevenue) << endl;
+    useWhiteColour();
+    
+    cout << "\n";
+    displayProgressBar("Consultation", consultationRevenue, consultationRevenue + medicineRevenue);
+    displayProgressBar("Medicines", medicineRevenue, consultationRevenue + medicineRevenue);
+    
+    useWhiteColour();
+    cout << "\n\n";
+    useYellowColour();
+    useWhiteColour();
+    char choice = SafeCharInput("Would you like to generate a PDF report? (Y/N): ", "YN");
+    
+    if (choice == 'Y' || choice == 'y')
+    {
+        if (GenerateRevenueReportPDF(appointmentStatus, appointmentDate, appointmentEmergency, appointmentCount))
+        {
+            useGreenColour();
+            cout << "\n✓ Revenue report PDF generated successfully!" << endl;
+            useWhiteColour();
+        }
+        else
+        {
+            useRedColour();
+            cout << "\n✗ Failed to generate PDF report." << endl;
+            useWhiteColour();
+        }
+    }
+    
+    cout << "\nPress any key to continue...";
+    _getch();
+}
+
+// ============== END OF NEW FEATURE FUNCTIONS ==============
+
 void LoadPatientsFromFile(StrArray &PatientName, StrArray &PatientPassword, StrArray &PatientAge, int &Patientcount)
 {
     ifstream file(PATIENTS_FILE);
@@ -845,6 +1748,7 @@ void LoadAppointmentsFromFile(StrArray &appointmentPatient,
                               StrArray &appointmentDate,
                               StrArray &appointmentTime,
                               StrArray &appointmentStatus,
+                              StrArray &appointmentEmergency,
                               StrArray &PrescriptionMed,
                               StrArray &MedicineTimes,
                               StrArray &PrescriptionDays,
@@ -865,8 +1769,8 @@ void LoadAppointmentsFromFile(StrArray &appointmentPatient,
             continue;
         }
 
-        string fields[8];
-        int fieldCount = SplitFields(line, fields, 8);
+        string fields[9];
+        int fieldCount = SplitFields(line, fields, 9);
         if (fieldCount < 3)
         {
             continue;
@@ -876,21 +1780,26 @@ void LoadAppointmentsFromFile(StrArray &appointmentPatient,
         appointmentDoctor[appointmentCount] = fields[1];
         appointmentDate[appointmentCount] = fields[2];
 
-        if (fieldCount >= 8)
+        if (fieldCount >= 9)
         {
             appointmentTime[appointmentCount] = fields[3];
             appointmentStatus[appointmentCount] = fields[4];
-            PrescriptionMed[appointmentCount] = fields[5];
-            MedicineTimes[appointmentCount] = fields[6];
-            PrescriptionDays[appointmentCount] = fields[7];
+            appointmentEmergency[appointmentCount] = fields[5];
+            PrescriptionMed[appointmentCount] = fields[6];
+            MedicineTimes[appointmentCount] = fields[7];
+            PrescriptionDays[appointmentCount] = fields[8];
         }
         else
         {
-            appointmentTime[appointmentCount].clear();
-            appointmentStatus[appointmentCount] = GetField(fields, fieldCount, 3);
-            PrescriptionMed[appointmentCount] = GetField(fields, fieldCount, 4);
-            MedicineTimes[appointmentCount] = GetField(fields, fieldCount, 5);
-            PrescriptionDays[appointmentCount] = GetField(fields, fieldCount, 6);
+            appointmentTime[appointmentCount] = GetField(fields, fieldCount, 3);
+            appointmentStatus[appointmentCount] = GetField(fields, fieldCount, 4);
+            appointmentEmergency[appointmentCount] = GetField(fields, fieldCount, 5);
+            if (appointmentEmergency[appointmentCount].empty()) {
+                appointmentEmergency[appointmentCount] = "No";
+            }
+            PrescriptionMed[appointmentCount] = GetField(fields, fieldCount, 6);
+            MedicineTimes[appointmentCount] = GetField(fields, fieldCount, 7);
+            PrescriptionDays[appointmentCount] = GetField(fields, fieldCount, 8);
         }
         appointmentCount++;
     }
@@ -901,6 +1810,7 @@ void SaveAppointmentsToFile(const StrArray &appointmentPatient,
                             const StrArray &appointmentDate,
                             const StrArray &appointmentTime,
                             const StrArray &appointmentStatus,
+                            const StrArray &appointmentEmergency,
                             const StrArray &PrescriptionMed,
                             const StrArray &MedicineTimes,
                             const StrArray &PrescriptionDays,
@@ -920,6 +1830,7 @@ void SaveAppointmentsToFile(const StrArray &appointmentPatient,
              << appointmentDate[i] << FIELD_DELIMITER
                << appointmentTime[i] << FIELD_DELIMITER
              << appointmentStatus[i] << FIELD_DELIMITER
+             << appointmentEmergency[i] << FIELD_DELIMITER
              << PrescriptionMed[i] << FIELD_DELIMITER
              << MedicineTimes[i] << FIELD_DELIMITER
              << PrescriptionDays[i] << '\n';
@@ -928,6 +1839,10 @@ void SaveAppointmentsToFile(const StrArray &appointmentPatient,
 
 void LoadDoctorsFromFile(StrArray &Doctors,
                          StrArray &DoctorPassword,
+                         StrArray &DoctorEmail,
+                         StrArray &DoctorPhone,
+                         StrArray &DoctorAddress,
+                         StrArray &DoctorQualification,
                          StrArray &DoctorStartTime,
                          StrArray &DoctorEndTime,
                          StrArray &DocAvailableDays,
@@ -949,32 +1864,48 @@ void LoadDoctorsFromFile(StrArray &Doctors,
             continue;
         }
 
-        string fields[6];
-        int fieldCount = SplitFields(line, fields, 6);
-        if (fieldCount < 5)
+        string fields[10];
+        int fieldCount = SplitFields(line, fields, 10);
+        if (fieldCount < 6)
         {
+            // Old format compatibility - load basic info
+            if (fieldCount >= 5)
+            {
+                Doctors[DoctorCount] = fields[0];
+                DoctorPassword[DoctorCount] = fields[1];
+                DoctorEmail[DoctorCount] = "";
+                DoctorPhone[DoctorCount] = "";
+                DoctorAddress[DoctorCount] = "";
+                DoctorQualification[DoctorCount] = "";
+                DoctorStartTime[DoctorCount] = fields[2];
+                DoctorEndTime[DoctorCount] = fields[3];
+                DocAvailableDays[DoctorCount] = fields[4];
+                DoctorSpecialization[DoctorCount] = (fieldCount >= 6 && !fields[5].empty()) ? fields[5] : "General Medicine";
+                DoctorCount++;
+            }
             continue;
         }
 
         Doctors[DoctorCount] = fields[0];
         DoctorPassword[DoctorCount] = fields[1];
-        DoctorStartTime[DoctorCount] = fields[2];
-        DoctorEndTime[DoctorCount] = fields[3];
-        DocAvailableDays[DoctorCount] = fields[4];
-        if (fieldCount >= 6 && !fields[5].empty())
-        {
-            DoctorSpecialization[DoctorCount] = fields[5];
-        }
-        else
-        {
-            DoctorSpecialization[DoctorCount] = "General Medicine";
-        }
+        DoctorEmail[DoctorCount] = fields[2];
+        DoctorPhone[DoctorCount] = fields[3];
+        DoctorAddress[DoctorCount] = fields[4];
+        DoctorQualification[DoctorCount] = fields[5];
+        DoctorStartTime[DoctorCount] = (fieldCount >= 7) ? fields[6] : "09:00";
+        DoctorEndTime[DoctorCount] = (fieldCount >= 8) ? fields[7] : "17:00";
+        DocAvailableDays[DoctorCount] = (fieldCount >= 9) ? fields[8] : "Mon-Fri";
+        DoctorSpecialization[DoctorCount] = (fieldCount >= 10 && !fields[9].empty()) ? fields[9] : "General Medicine";
         DoctorCount++;
     }
 }
 
 void SaveDoctorsToFile(const StrArray &Doctors,
                        const StrArray &DoctorPassword,
+                       const StrArray &DoctorEmail,
+                       const StrArray &DoctorPhone,
+                       const StrArray &DoctorAddress,
+                       const StrArray &DoctorQualification,
                        const StrArray &DoctorStartTime,
                        const StrArray &DoctorEndTime,
                        const StrArray &DocAvailableDays,
@@ -992,6 +1923,10 @@ void SaveDoctorsToFile(const StrArray &Doctors,
     {
            file << Doctors[i] << FIELD_DELIMITER
                << DoctorPassword[i] << FIELD_DELIMITER
+               << DoctorEmail[i] << FIELD_DELIMITER
+               << DoctorPhone[i] << FIELD_DELIMITER
+               << DoctorAddress[i] << FIELD_DELIMITER
+               << DoctorQualification[i] << FIELD_DELIMITER
                << DoctorStartTime[i] << FIELD_DELIMITER
                << DoctorEndTime[i] << FIELD_DELIMITER
                << DocAvailableDays[i] << FIELD_DELIMITER
@@ -1046,7 +1981,12 @@ void SaveDoctorRequests(const StrArray &PendingDoctorNames, const StrArray &Pend
     }
 }
 
-void LoadReceptionistsFromFile(StrArray &Receptionist, int &ReceptionistCount)
+void LoadReceptionistsFromFile(StrArray &Receptionist,
+                               StrArray &ReceptionistPassword,
+                               StrArray &ReceptionistEmail,
+                               StrArray &ReceptionistPhone,
+                               StrArray &ReceptionistAddress,
+                               int &ReceptionistCount)
 {
     ifstream file(RECEPTIONISTS_FILE);
     if (!file.is_open())
@@ -1063,12 +2003,42 @@ void LoadReceptionistsFromFile(StrArray &Receptionist, int &ReceptionistCount)
             continue;
         }
 
-        Receptionist[ReceptionistCount] = line;
+        string fields[5];
+        int fieldCount = SplitFields(line, fields, 5);
+        
+        if (fieldCount == 1)
+        {
+            // Old format compatibility - name only
+            Receptionist[ReceptionistCount] = fields[0];
+            ReceptionistPassword[ReceptionistCount] = "";
+            ReceptionistEmail[ReceptionistCount] = "";
+            ReceptionistPhone[ReceptionistCount] = "";
+            ReceptionistAddress[ReceptionistCount] = "";
+        }
+        else if (fieldCount >= 5)
+        {
+            // New format
+            Receptionist[ReceptionistCount] = fields[0];
+            ReceptionistPassword[ReceptionistCount] = fields[1];
+            ReceptionistEmail[ReceptionistCount] = fields[2];
+            ReceptionistPhone[ReceptionistCount] = fields[3];
+            ReceptionistAddress[ReceptionistCount] = fields[4];
+        }
+        else
+        {
+            continue;
+        }
+        
         ReceptionistCount++;
     }
 }
 
-void SaveReceptionistsToFile(const StrArray &Receptionist, int ReceptionistCount)
+void SaveReceptionistsToFile(const StrArray &Receptionist,
+                             const StrArray &ReceptionistPassword,
+                             const StrArray &ReceptionistEmail,
+                             const StrArray &ReceptionistPhone,
+                             const StrArray &ReceptionistAddress,
+                             int ReceptionistCount)
 {
     ofstream file(RECEPTIONISTS_FILE);
     if (!file.is_open())
@@ -1079,11 +2049,20 @@ void SaveReceptionistsToFile(const StrArray &Receptionist, int ReceptionistCount
 
     for (int i = 0; i < ReceptionistCount; i++)
     {
-        file << Receptionist[i] << '\n';
+        file << Receptionist[i] << FIELD_DELIMITER
+             << ReceptionistPassword[i] << FIELD_DELIMITER
+             << ReceptionistEmail[i] << FIELD_DELIMITER
+             << ReceptionistPhone[i] << FIELD_DELIMITER
+             << ReceptionistAddress[i] << '\n';
     }
 }
 
-void LoadPharmacistsFromFile(StrArray &Pharmacist, int &PharmacistCount)
+void LoadPharmacistsFromFile(StrArray &Pharmacist,
+                             StrArray &PharmacistPassword,
+                             StrArray &PharmacistEmail,
+                             StrArray &PharmacistPhone,
+                             StrArray &PharmacistAddress,
+                             int &PharmacistCount)
 {
     ifstream file(PHARMACISTS_FILE);
     if (!file.is_open())
@@ -1100,12 +2079,42 @@ void LoadPharmacistsFromFile(StrArray &Pharmacist, int &PharmacistCount)
             continue;
         }
 
-        Pharmacist[PharmacistCount] = line;
+        string fields[5];
+        int fieldCount = SplitFields(line, fields, 5);
+        
+        if (fieldCount == 1)
+        {
+            // Old format compatibility - name only
+            Pharmacist[PharmacistCount] = fields[0];
+            PharmacistPassword[PharmacistCount] = "";
+            PharmacistEmail[PharmacistCount] = "";
+            PharmacistPhone[PharmacistCount] = "";
+            PharmacistAddress[PharmacistCount] = "";
+        }
+        else if (fieldCount >= 5)
+        {
+            // New format
+            Pharmacist[PharmacistCount] = fields[0];
+            PharmacistPassword[PharmacistCount] = fields[1];
+            PharmacistEmail[PharmacistCount] = fields[2];
+            PharmacistPhone[PharmacistCount] = fields[3];
+            PharmacistAddress[PharmacistCount] = fields[4];
+        }
+        else
+        {
+            continue;
+        }
+        
         PharmacistCount++;
     }
 }
 
-void SavePharmacistsToFile(const StrArray &Pharmacist, int PharmacistCount)
+void SavePharmacistsToFile(const StrArray &Pharmacist,
+                           const StrArray &PharmacistPassword,
+                           const StrArray &PharmacistEmail,
+                           const StrArray &PharmacistPhone,
+                           const StrArray &PharmacistAddress,
+                           int PharmacistCount)
 {
     ofstream file(PHARMACISTS_FILE);
     if (!file.is_open())
@@ -1116,7 +2125,11 @@ void SavePharmacistsToFile(const StrArray &Pharmacist, int PharmacistCount)
 
     for (int i = 0; i < PharmacistCount; i++)
     {
-        file << Pharmacist[i] << '\n';
+        file << Pharmacist[i] << FIELD_DELIMITER
+             << PharmacistPassword[i] << FIELD_DELIMITER
+             << PharmacistEmail[i] << FIELD_DELIMITER
+             << PharmacistPhone[i] << FIELD_DELIMITER
+             << PharmacistAddress[i] << '\n';
     }
 }
 
@@ -1237,23 +2250,27 @@ void SavePatientHistory(const StrArray &HistoryPatients, const StrArray &History
 void LoadAllData(StrArray &PatientName, StrArray &PatientPassword, StrArray &PatientAge, int &Patientcount,
                  StrArray &appointmentPatient, StrArray &appointmentDoctor, StrArray &appointmentDate,
                  StrArray &appointmentTime,
-                 StrArray &appointmentStatus, StrArray &PrescriptionMed, StrArray &MedicineTimes,
+                 StrArray &appointmentStatus, StrArray &appointmentEmergency, StrArray &PrescriptionMed, StrArray &MedicineTimes,
                  StrArray &PrescriptionDays, int &appointmentCount,
-                 StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorStartTime,
+                 StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorEmail, StrArray &DoctorPhone,
+                 StrArray &DoctorAddress, StrArray &DoctorQualification, StrArray &DoctorStartTime,
                  StrArray &DoctorEndTime, StrArray &DocAvailableDays, StrArray &DoctorSpecialization, int &DoctorCount,
                  StrArray &PendingDoctorNames, StrArray &PendingDoctorPasswords, int &PendingDoctorRequestCount,
-                 StrArray &Receptionist, int &ReceptionistCount,
-                 StrArray &Pharmacist, int &PharmacistCount,
+                 StrArray &Receptionist, StrArray &ReceptionistPassword, StrArray &ReceptionistEmail,
+                 StrArray &ReceptionistPhone, StrArray &ReceptionistAddress, int &ReceptionistCount,
+                 StrArray &Pharmacist, StrArray &PharmacistPassword, StrArray &PharmacistEmail,
+                 StrArray &PharmacistPhone, StrArray &PharmacistAddress, int &PharmacistCount,
                  StrArray &Medicines, StrArray &MedicinePrices, IntArray &MedicineStock, IntArray &MedicineReorderLevel, int &MedicineCount,
                  StrArray &HistoryPatients, StrArray &HistoryDetails, int &HistoryCount)
 {
     LoadPatientsFromFile(PatientName, PatientPassword, PatientAge, Patientcount);
     LoadAppointmentsFromFile(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                             PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount);
-    LoadDoctorsFromFile(Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
+                             appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount);
+    LoadDoctorsFromFile(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                        DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
     LoadDoctorRequests(PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount);
-    LoadReceptionistsFromFile(Receptionist, ReceptionistCount);
-    LoadPharmacistsFromFile(Pharmacist, PharmacistCount);
+    LoadReceptionistsFromFile(Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount);
+    LoadPharmacistsFromFile(Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount);
     LoadMedicinesFromFile(Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount);
     LoadPatientHistory(HistoryPatients, HistoryDetails, HistoryCount);
 }
@@ -1261,35 +2278,46 @@ void LoadAllData(StrArray &PatientName, StrArray &PatientPassword, StrArray &Pat
 void SaveAllData(const StrArray &PatientName, const StrArray &PatientPassword, const StrArray &PatientAge, int Patientcount,
                  const StrArray &appointmentPatient, const StrArray &appointmentDoctor, const StrArray &appointmentDate,
                  const StrArray &appointmentTime,
-                 const StrArray &appointmentStatus, const StrArray &PrescriptionMed, const StrArray &MedicineTimes,
+                 const StrArray &appointmentStatus, const StrArray &appointmentEmergency, const StrArray &PrescriptionMed, const StrArray &MedicineTimes,
                  const StrArray &PrescriptionDays, int appointmentCount,
-                 const StrArray &Doctors, const StrArray &DoctorPassword, const StrArray &DoctorStartTime,
+                 const StrArray &Doctors, const StrArray &DoctorPassword, const StrArray &DoctorEmail, const StrArray &DoctorPhone,
+                 const StrArray &DoctorAddress, const StrArray &DoctorQualification, const StrArray &DoctorStartTime,
                  const StrArray &DoctorEndTime, const StrArray &DocAvailableDays, const StrArray &DoctorSpecialization, int DoctorCount,
                  const StrArray &PendingDoctorNames, const StrArray &PendingDoctorPasswords, int PendingDoctorRequestCount,
-                 const StrArray &Receptionist, int ReceptionistCount,
-                 const StrArray &Pharmacist, int PharmacistCount,
+                 const StrArray &Receptionist, const StrArray &ReceptionistPassword, const StrArray &ReceptionistEmail,
+                 const StrArray &ReceptionistPhone, const StrArray &ReceptionistAddress, int ReceptionistCount,
+                 const StrArray &Pharmacist, const StrArray &PharmacistPassword, const StrArray &PharmacistEmail,
+                 const StrArray &PharmacistPhone, const StrArray &PharmacistAddress, int PharmacistCount,
                  const StrArray &Medicines, const StrArray &MedicinePrices, const IntArray &MedicineStock, const IntArray &MedicineReorderLevel, int MedicineCount,
                  const StrArray &HistoryPatients, const StrArray &HistoryDetails, int HistoryCount)
 {
     SavePatientsToFile(PatientName, PatientPassword, PatientAge, Patientcount);
     SaveAppointmentsToFile(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                           PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount);
-    SaveDoctorsToFile(Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
+                           appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount);
+    SaveDoctorsToFile(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                      DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
     SaveDoctorRequests(PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount);
-    SaveReceptionistsToFile(Receptionist, ReceptionistCount);
-    SavePharmacistsToFile(Pharmacist, PharmacistCount);
+    SaveReceptionistsToFile(Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount);
+    SavePharmacistsToFile(Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount);
     SaveMedicinesToFile(Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount);
     SavePatientHistory(HistoryPatients, HistoryDetails, HistoryCount);
 }
 
-void InitializeDefaults(StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorStartTime,
+void InitializeDefaults(StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorEmail, StrArray &DoctorPhone,
+                        StrArray &DoctorAddress, StrArray &DoctorQualification, StrArray &DoctorStartTime,
                         StrArray &DoctorEndTime, StrArray &DocAvailableDays, StrArray &DoctorSpecialization, int &DoctorCount,
-                        StrArray &Receptionist, int &ReceptionistCount,
-                        StrArray &Pharmacist, int &PharmacistCount,
+                        StrArray &Receptionist, StrArray &ReceptionistPassword, StrArray &ReceptionistEmail,
+                        StrArray &ReceptionistPhone, StrArray &ReceptionistAddress, int &ReceptionistCount,
+                        StrArray &Pharmacist, StrArray &PharmacistPassword, StrArray &PharmacistEmail,
+                        StrArray &PharmacistPhone, StrArray &PharmacistAddress, int &PharmacistCount,
                         StrArray &Medicines, StrArray &MedicinePrices, IntArray &MedicineStock, IntArray &MedicineReorderLevel, int &MedicineCount)
 {
     const string defaultDoctors[] = {"Ali", "Hajra"};
     const string defaultDoctorPasswords[] = {"1234", "1234"};
+    const string defaultDoctorEmails[] = {"dr.ali@hospital.com", "dr.hajra@hospital.com"};
+    const string defaultDoctorPhones[] = {"+92-300-1234567", "+92-321-9876543"};
+    const string defaultDoctorAddresses[] = {"123 Medical Plaza, Karachi", "456 Health Center, Lahore"};
+    const string defaultDoctorQualifications[] = {"MBBS, FCPS (Cardiology)", "MBBS, MRCP (Endocrinology)"};
     const string defaultStartTimes[] = {"3PM", "7PM"};
     const string defaultEndTimes[] = {"5PM", "9PM"};
     const string defaultAvailableDays[] = {"Monday to Sunday", "Monday to Sunday"};
@@ -1299,6 +2327,10 @@ void InitializeDefaults(StrArray &Doctors, StrArray &DoctorPassword, StrArray &D
     {
         Doctors[i] = defaultDoctors[i];
         DoctorPassword[i] = defaultDoctorPasswords[i];
+        DoctorEmail[i] = defaultDoctorEmails[i];
+        DoctorPhone[i] = defaultDoctorPhones[i];
+        DoctorAddress[i] = defaultDoctorAddresses[i];
+        DoctorQualification[i] = defaultDoctorQualifications[i];
         DoctorStartTime[i] = defaultStartTimes[i];
         DoctorEndTime[i] = defaultEndTimes[i];
         DocAvailableDays[i] = defaultAvailableDays[i];
@@ -1306,17 +2338,33 @@ void InitializeDefaults(StrArray &Doctors, StrArray &DoctorPassword, StrArray &D
     }
 
     const string defaultReceptionists[] = {"Hamza"};
+    const string defaultReceptionistPasswords[] = {"recep123"};
+    const string defaultReceptionistEmails[] = {"hamza@hospital.com"};
+    const string defaultReceptionistPhones[] = {"+92-311-5555555"};
+    const string defaultReceptionistAddresses[] = {"Hospital Admin Block"};
     ReceptionistCount = 1;
     for (int i = 0; i < ReceptionistCount; i++)
     {
         Receptionist[i] = defaultReceptionists[i];
+        ReceptionistPassword[i] = defaultReceptionistPasswords[i];
+        ReceptionistEmail[i] = defaultReceptionistEmails[i];
+        ReceptionistPhone[i] = defaultReceptionistPhones[i];
+        ReceptionistAddress[i] = defaultReceptionistAddresses[i];
     }
 
     const string defaultPharmacists[] = {"Umair"};
+    const string defaultPharmacistPasswords[] = {"pharm123"};
+    const string defaultPharmacistEmails[] = {"umair.pharmacy@hospital.com"};
+    const string defaultPharmacistPhones[] = {"+92-333-7777777"};
+    const string defaultPharmacistAddresses[] = {"Hospital Pharmacy Wing"};
     PharmacistCount = 1;
     for (int i = 0; i < PharmacistCount; i++)
     {
         Pharmacist[i] = defaultPharmacists[i];
+        PharmacistPassword[i] = defaultPharmacistPasswords[i];
+        PharmacistEmail[i] = defaultPharmacistEmails[i];
+        PharmacistPhone[i] = defaultPharmacistPhones[i];
+        PharmacistAddress[i] = defaultPharmacistAddresses[i];
     }
 
     const string defaultMedicines[] = {"Captopril", "Esomeprazole", "Furosemide", "Metoclopramide", "Cimetidine",
@@ -1438,47 +2486,150 @@ void ViewAppointments(const StrArray &appointmentPatient, const StrArray &appoin
 }
 
 // Show Pharmacists
-void ViewPharmacist(const StrArray &Pharmacist, int PharmacistCount)
+void ViewPharmacist(const StrArray &Pharmacist, const StrArray &PharmacistEmail,
+                    const StrArray &PharmacistPhone, const StrArray &PharmacistAddress, int PharmacistCount)
 {
+    if (PharmacistCount == 0)
+    {
+        useRedColour();
+        cout << "No pharmacists in the system." << endl;
+        useWhiteColour();
+        return;
+    }
+    
+    useCyanColour();
+    cout << "\n╔════════════════════════════════════════════════════════════════════════╗" << endl;
+    useMagentaColour();
+    cout << "║                    💊  PHARMACIST DIRECTORY  💊                       ║" << endl;
+    useCyanColour();
+    cout << "╠════════════════════════════════════════════════════════════════════════╣" << endl;
+    useWhiteColour();
+    
     for (int i = 0; i < PharmacistCount; i++)
     {
-        cout << Pharmacist[i] << endl;
+        useGreenColour();
+        cout << "║  📋 Pharmacist #" << (i + 1) << " - " << Pharmacist[i];
+        cout << string(52 - Pharmacist[i].length(), ' ') << "║" << endl;
+        useCyanColour();
+        cout << "║  " << string(70, '-') << "║" << endl;
+        useYellowColour();
+        cout << "║    📧 Email:   " << left << setw(53) << (PharmacistEmail[i].empty() ? "Not provided" : PharmacistEmail[i]) << "║" << endl;
+        cout << "║    📞 Phone:   " << left << setw(53) << (PharmacistPhone[i].empty() ? "Not provided" : PharmacistPhone[i]) << "║" << endl;
+        cout << "║    🏠 Address: " << left << setw(53) << (PharmacistAddress[i].empty() ? "Not provided" : PharmacistAddress[i]) << "║" << endl;
+        
+        if (i < PharmacistCount - 1)
+        {
+            useCyanColour();
+            cout << "╠════════════════════════════════════════════════════════════════════════╣" << endl;
+        }
     }
+    
+    useCyanColour();
+    cout << "╚════════════════════════════════════════════════════════════════════════╝" << endl;
+    useWhiteColour();
+    cout << "\nPress any key to continue...";
+    _getch();
 }
 
 // Show Receptionists
-void ViewReceptionist(const StrArray &Receptionist, int ReceptionistCount)
+void ViewReceptionist(const StrArray &Receptionist, const StrArray &ReceptionistEmail,
+                      const StrArray &ReceptionistPhone, const StrArray &ReceptionistAddress, int ReceptionistCount)
 {
+    if (ReceptionistCount == 0)
+    {
+        useRedColour();
+        cout << "No receptionists in the system." << endl;
+        useWhiteColour();
+        return;
+    }
+    
+    useCyanColour();
+    cout << "\n╔════════════════════════════════════════════════════════════════════════╗" << endl;
+    useMagentaColour();
+    cout << "║                   👥  RECEPTIONIST DIRECTORY  👥                      ║" << endl;
+    useCyanColour();
+    cout << "╠════════════════════════════════════════════════════════════════════════╣" << endl;
+    useWhiteColour();
+    
     for (int i = 0; i < ReceptionistCount; i++)
     {
-        cout << Receptionist[i] << endl;
+        useGreenColour();
+        cout << "║  📋 Receptionist #" << (i + 1) << " - " << Receptionist[i];
+        cout << string(49 - Receptionist[i].length(), ' ') << "║" << endl;
+        useCyanColour();
+        cout << "║  " << string(70, '-') << "║" << endl;
+        useYellowColour();
+        cout << "║    📧 Email:   " << left << setw(53) << (ReceptionistEmail[i].empty() ? "Not provided" : ReceptionistEmail[i]) << "║" << endl;
+        cout << "║    📞 Phone:   " << left << setw(53) << (ReceptionistPhone[i].empty() ? "Not provided" : ReceptionistPhone[i]) << "║" << endl;
+        cout << "║    🏠 Address: " << left << setw(53) << (ReceptionistAddress[i].empty() ? "Not provided" : ReceptionistAddress[i]) << "║" << endl;
+        
+        if (i < ReceptionistCount - 1)
+        {
+            useCyanColour();
+            cout << "╠════════════════════════════════════════════════════════════════════════╣" << endl;
+        }
     }
+    
+    useCyanColour();
+    cout << "╚════════════════════════════════════════════════════════════════════════╝" << endl;
+    useWhiteColour();
+    cout << "\nPress any key to continue...";
+    _getch();
 }
 
 // Show Doctors
-void ViewDoctors(const StrArray &Doctors, const StrArray &DoctorSpecialization, int DoctorCount)
+void ViewDoctors(const StrArray &Doctors, const StrArray &DoctorEmail, const StrArray &DoctorPhone,
+                 const StrArray &DoctorAddress, const StrArray &DoctorQualification,
+                 const StrArray &DoctorStartTime, const StrArray &DoctorEndTime,
+                 const StrArray &DocAvailableDays, const StrArray &DoctorSpecialization, int DoctorCount)
 {
+    if (DoctorCount == 0)
+    {
+        useRedColour();
+        cout << "No doctors in the system." << endl;
+        useWhiteColour();
+        return;
+    }
+    
     useCyanColour();
-    cout << "\n╔════════════════════════════════════════════════════════╗" << endl;
+    cout << "\n╔════════════════════════════════════════════════════════════════════════╗" << endl;
     useMagentaColour();
-    cout << "║              👨‍⚕️  AVAILABLE DOCTORS  👨‍⚕️               ║" << endl;
+    cout << "║                    👨‍⚕️  DOCTOR DIRECTORY  👨‍⚕️                         ║" << endl;
     useCyanColour();
-    cout << "╠════════════════════════════════════════════════════════╣" << endl;
+    cout << "╠════════════════════════════════════════════════════════════════════════╣" << endl;
+    useWhiteColour();
     
     for (int i = 0; i < DoctorCount; i++)
     {
         useGreenColour();
-        cout << "║  " << (i + 1) << ". Dr. " << left << setw(20) << Doctors[i];
-        useYellowColour();
-        string spec = DoctorSpecialization[i].empty() ? "General" : DoctorSpecialization[i];
-        cout << "[" << setw(18) << spec << "]";
+        cout << "║  📋 Dr. " << Doctors[i];
+        cout << string(61 - Doctors[i].length(), ' ') << "║" << endl;
         useCyanColour();
-        cout << " ║" << endl;
+        cout << "║  " << string(70, '-') << "║" << endl;
+        useYellowColour();
+        string spec = DoctorSpecialization[i].empty() ? "General Medicine" : DoctorSpecialization[i];
+        cout << "║    🔬 Specialization: " << left << setw(46) << spec << "║" << endl;
+        cout << "║    🎓 Qualification:  " << left << setw(46) << (DoctorQualification[i].empty() ? "Not provided" : DoctorQualification[i]) << "║" << endl;
+        cout << "║    📧 Email:          " << left << setw(46) << (DoctorEmail[i].empty() ? "Not provided" : DoctorEmail[i]) << "║" << endl;
+        cout << "║    📞 Phone:          " << left << setw(46) << (DoctorPhone[i].empty() ? "Not provided" : DoctorPhone[i]) << "║" << endl;
+        cout << "║    🏠 Address:        " << left << setw(46) << (DoctorAddress[i].empty() ? "Not provided" : DoctorAddress[i]) << "║" << endl;
+        useWhiteColour();
+        string schedule = DoctorStartTime[i] + " - " + DoctorEndTime[i];
+        cout << "║    🕐 Working Hours:  " << left << setw(46) << schedule << "║" << endl;
+        cout << "║    📅 Available Days: " << left << setw(46) << DocAvailableDays[i] << "║" << endl;
+        
+        if (i < DoctorCount - 1)
+        {
+            useCyanColour();
+            cout << "╠════════════════════════════════════════════════════════════════════════╣" << endl;
+        }
     }
     
     useCyanColour();
-    cout << "╚════════════════════════════════════════════════════════╝" << endl;
+    cout << "╚════════════════════════════════════════════════════════════════════════╝" << endl;
     useWhiteColour();
+    cout << "\nPress any key to continue...";
+    _getch();
 }
 
 // Changes the text colors
@@ -1495,12 +2646,11 @@ int OpeningMenu()
 {
     
     cout << " Welcome to the Hospital Management System \n";
-    int Option;
 
     cout << "1. Log In \n";
     cout << "2. Sign Up \n";
     cout << "3. Exit \n";
-    cin >> Option;
+    int Option = SafeIntInput("Enter your choice: ", 1, 3);
     return Option;
 }
 int Menu()
@@ -1596,19 +2746,17 @@ int Menu()
     drawBoxBottom(width);
     
     useCyanColour();
-    cout << "\nEnter your choice: ";
     useWhiteColour();
-    int option;
-    cin >> option;
+    int option = SafeIntInput("\nEnter your choice: ", 1, 6);
     return option;
 }
 
 // Book appointment with doctor and assign the next available slot
 bool BookAppointment(StrArray &appointmentPatient, StrArray &appointmentDoctor, StrArray &appointmentDate,
-                     StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &PrescriptionMed,
-                     StrArray &MedicineTimes, StrArray &PrescriptionDays, int &appointmentCount,
+                     StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &appointmentEmergency,
+                     StrArray &PrescriptionMed, StrArray &MedicineTimes, StrArray &PrescriptionDays, int &appointmentCount,
                      const StrArray &Doctors, const StrArray &DoctorStartTime, const StrArray &DoctorEndTime,
-                     int DoctorCount, const string &name, const string &doctor, const string &date)
+                     int DoctorCount, const string &name, const string &doctor, const string &date, bool isEmergency = false)
 {
     for (int i = 0; i < appointmentCount; i++)
     {
@@ -1647,7 +2795,8 @@ bool BookAppointment(StrArray &appointmentPatient, StrArray &appointmentDoctor, 
     appointmentDoctor[appointmentCount] = doctor;
     appointmentDate[appointmentCount] = date;
     appointmentTime[appointmentCount] = FormatMinutesToTime(slotStart);
-    appointmentStatus[appointmentCount].clear();
+    appointmentStatus[appointmentCount] = isEmergency ? "Emergency-Pending" : "Pending";
+    appointmentEmergency[appointmentCount] = isEmergency ? "Yes" : "No";
     PrescriptionMed[appointmentCount].clear();
     MedicineTimes[appointmentCount].clear();
     PrescriptionDays[appointmentCount].clear();
@@ -1657,8 +2806,8 @@ bool BookAppointment(StrArray &appointmentPatient, StrArray &appointmentDoctor, 
 
 // Cancel an appointment
 bool CancelAppointment(StrArray &appointmentPatient, StrArray &appointmentDoctor, StrArray &appointmentDate,
-                       StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &PrescriptionMed, StrArray &MedicineTimes,
-                       StrArray &PrescriptionDays, int &appointmentCount,
+                       StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &appointmentEmergency,
+                       StrArray &PrescriptionMed, StrArray &MedicineTimes, StrArray &PrescriptionDays, int &appointmentCount,
                        const string &name, const string &date)
 {
     for (int i = 0; i < appointmentCount; i++)
@@ -1671,6 +2820,7 @@ bool CancelAppointment(StrArray &appointmentPatient, StrArray &appointmentDoctor
             {
                 appointmentPatient[j] = appointmentPatient[j + 1];
                 appointmentDoctor[j] = appointmentDoctor[j + 1];
+                appointmentEmergency[j] = appointmentEmergency[j + 1];
                 appointmentDate[j] = appointmentDate[j + 1];
                 appointmentTime[j] = appointmentTime[j + 1];
                 appointmentStatus[j] = appointmentStatus[j + 1];
@@ -1807,7 +2957,7 @@ void ManageInventory(StrArray &Medicines, StrArray &MedicinePrices, int &Medicin
         cout << "4. Search Medicine\n";
         cout << "5. View all Medicines\n";
         cout << "6. Back to menu\n ";
-        cin >> choice;
+        choice = SafeIntInput("Enter your choice: ", 1, 6);
         if (choice == 1)
         {
             addMedicine(Medicines, MedicinePrices, MedicineCount);
@@ -1870,7 +3020,7 @@ void Prescriptions(const StrArray &appointmentPatient, StrArray &PrescriptionMed
 
         cout << "Press 1 to enter Prescription ";
         cout << "Press 0 to Exit : ";
-        cin >> choice;
+        choice = SafeIntInput("", 0, 1);
 
         if (choice == 1)
         {
@@ -1923,7 +3073,8 @@ void MarkStatus(const StrArray &appointmentDoctor, StrArray &appointmentStatus, 
 }
 
 void ReviewDoctorSignupRequests(StrArray &PendingDoctorNames, StrArray &PendingDoctorPasswords, int &PendingDoctorRequestCount,
-                                StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorStartTime,
+                                StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorEmail, StrArray &DoctorPhone,
+                                StrArray &DoctorAddress, StrArray &DoctorQualification, StrArray &DoctorStartTime,
                                 StrArray &DoctorEndTime, StrArray &DocAvailableDays, StrArray &DoctorSpecialization, int &DoctorCount)
 {
     if (PendingDoctorRequestCount == 0)
@@ -1940,9 +3091,7 @@ void ReviewDoctorSignupRequests(StrArray &PendingDoctorNames, StrArray &PendingD
             cout << i + 1 << ". " << PendingDoctorNames[i] << endl;
         }
 
-        cout << "Enter request number to review (0 to exit): ";
-        int selection = 0;
-        cin >> selection;
+        int selection = SafeIntInput("Enter request number to review (0 to exit): ", 0, PendingDoctorRequestCount);
         if (selection == 0)
         {
             break;
@@ -1954,9 +3103,7 @@ void ReviewDoctorSignupRequests(StrArray &PendingDoctorNames, StrArray &PendingD
         }
 
         int index = selection - 1;
-        cout << "1. Approve\n2. Reject\nChoose option: ";
-        int action = 0;
-        cin >> action;
+        int action = SafeIntInput("1. Approve\n2. Reject\nChoose option: ", 1, 2);
         if (action == 1)
         {
             if (DoctorCount >= UserSize)
@@ -1965,6 +3112,14 @@ void ReviewDoctorSignupRequests(StrArray &PendingDoctorNames, StrArray &PendingD
                 continue;
             }
 
+            useGreenColour();
+            cout << "\n=== Doctor Profile Setup ===" << endl;
+            useWhiteColour();
+            
+            string email = PromptLine("Enter email address: ");
+            string phone = PromptLine("Enter phone number (e.g., +92-300-1234567): ");
+            string address = PromptLine("Enter address: ");
+            string qualification = PromptLine("Enter qualification (e.g., MBBS, FCPS): ");
             string startTime = PromptLine("Enter starting time (e.g., 3PM): ");
             string endTime = PromptLine("Enter ending time (e.g., 5PM): ");
             string availableDays = PromptLine("Enter available days : ");
@@ -1976,12 +3131,23 @@ void ReviewDoctorSignupRequests(StrArray &PendingDoctorNames, StrArray &PendingD
 
             Doctors[DoctorCount] = PendingDoctorNames[index];
             DoctorPassword[DoctorCount] = PendingDoctorPasswords[index];
+            DoctorEmail[DoctorCount] = email;
+            DoctorPhone[DoctorCount] = phone;
+            DoctorAddress[DoctorCount] = address;
+            DoctorQualification[DoctorCount] = qualification;
             DoctorStartTime[DoctorCount] = startTime;
             DoctorEndTime[DoctorCount] = endTime;
             DocAvailableDays[DoctorCount] = availableDays;
             DoctorSpecialization[DoctorCount] = specialization;
             DoctorCount++;
-            cout << "Doctor signup approved." << endl;
+            
+            // Immediately save to file
+            SaveDoctorsToFile(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                              DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
+            
+            useGreenColour();
+            cout << "✓ Doctor signup approved successfully!" << endl;
+            useWhiteColour();
 
             for (int i = index; i < PendingDoctorRequestCount - 1; i++)
             {
@@ -2023,7 +3189,7 @@ void DoctorInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Doct
         cout << "1. Sign Up \n";
         cout << "2. Log In \n";
         cout << "3. Exit \n";
-        cin >> option1;
+        option1 = SafeIntInput("Enter your choice: ", 1, 3);
         if (option1 == 1)
         {
             string Doctor = PromptLine("Enter Your Name : ");
@@ -2053,7 +3219,7 @@ void DoctorInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Doct
                     cout << " (" << DoctorSpecialization[loggedInIndex] << ")";
                 }
                 cout << endl;
-                while (option != 5)
+                while (option != 6)
                 {
                     printHeader();
                     string doctorOptions[] = {
@@ -2061,10 +3227,11 @@ void DoctorInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Doct
                         "✅ Mark Appointment Status",
                         "⏰ Update Available Timing",
                         "💊 Write Prescription",
+                        "📊 View Performance Dashboard",
                         "🚪 Log Out"
                     };
-                    displayMenuBox("👨‍⚕️  DOCTOR DASHBOARD  👨‍⚕️", doctorOptions, 5);
-                    cin >> option;
+                    displayMenuBox("👨‍⚕️  DOCTOR DASHBOARD  👨‍⚕️", doctorOptions, 6);
+                    option = SafeIntInput("Enter your choice: ", 1, 6);
                     if (option == 1)
                     {
                         string name = PromptLine("Enter the Doctor's name : ");
@@ -2140,6 +3307,12 @@ void DoctorInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Doct
 
                     else if (option == 5)
                     {
+                        // View Performance Dashboard
+                        showDoctorPerformance(Doctor, appointmentDoctor, appointmentDate, appointmentStatus, appointmentCount);
+                    }
+                    
+                    else if (option == 6)
+                    {
                         break;
                     }
                     clearScreen();
@@ -2164,8 +3337,8 @@ void DoctorInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Doct
 // Shows the Patient' Menu with its Features
 void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray &PatientAge, int &Patientcount,
                       StrArray &appointmentPatient, StrArray &appointmentDoctor, StrArray &appointmentDate,
-                      StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &PrescriptionMed, StrArray &MedicineTimes,
-                      StrArray &PrescriptionDays, int &appointmentCount,
+                      StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &appointmentEmergency,
+                      StrArray &PrescriptionMed, StrArray &MedicineTimes, StrArray &PrescriptionDays, int &appointmentCount,
                       StrArray &Doctors, StrArray &DoctorStartTime, StrArray &DoctorEndTime,
                       StrArray &DocAvailableDays, StrArray &DoctorSpecialization, int DoctorCount,
                       const StrArray &Medicines, const StrArray &MedicinePrices, int MedicineCount)
@@ -2178,7 +3351,7 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
         cout << "1. Sign Up " << endl;
         cout << "2. Log In " << endl;
         cout << "3. Exit " << endl;
-        cin >> option;
+        option = SafeIntInput("Enter your choice: ", 1, 3);
         if (option == 1)
         {
             string Patient = PromptLine("Enter Your Name : ");
@@ -2206,10 +3379,15 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
             {
 
                 clearScreen();
-                cout << "Welcome " << result << endl;
+                
+                // Show reminders on login
+                showUpcomingAppointments(result, appointmentPatient, appointmentDoctor, appointmentDate, 
+                                         appointmentTime, appointmentStatus, appointmentCount);
+                
+                cout << "\nWelcome " << result << "!" << endl;
 
                 int option2 = 0;
-                while (option2 != 5)
+                while (option2 != 7)
                 {
                     printHeader();
                     string patientOptions[] = {
@@ -2217,20 +3395,22 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
                         "❌ Cancel Appointment",
                         "👨‍⚕️ View Doctors Details & Timings",
                         "🧾 Generate Bill",
+                        "📋 View Appointment History",
+                        "🚨 Book Emergency Appointment",
                         "🚪 Log Out"
                     };
-                    displayMenuBox("🏥  PATIENT DASHBOARD  🏥", patientOptions, 5);
-                    cin >> option2;
+                    displayMenuBox("🏥  PATIENT DASHBOARD  🏥", patientOptions, 7);
+                    option2 = SafeIntInput("Enter your choice: ", 1, 7);
                     if (option2 == 1)
                     {
                         string PTName = PromptLine("Enter Patient Name : ");
                         string date = PromptLine("Enter the date for appointment (YYYY-MM-DD) : ");
                         string DocName = PromptLine("Enter The Doctor's Name : ");
                         if (BookAppointment(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime,
-                                             appointmentStatus, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                                             appointmentStatus, appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays,
                                              appointmentCount,
                                              Doctors, DoctorStartTime, DoctorEndTime, DoctorCount,
-                                             PTName, DocName, date))
+                                             PTName, DocName, date, false))
                         {
                             showSuccess("Appointment Booked Successfully!");
                             useGreenColour();
@@ -2248,7 +3428,7 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
                         string PTName = PromptLine("Enter Patient Name : ");
                         string date = PromptLine("Enter the date for appointment (YYYY-MM-DD) : ");
                         if (CancelAppointment(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime,
-                                              appointmentStatus, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                                              appointmentStatus, appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays,
                                               appointmentCount, PTName, date))
                         {
                             showSuccess("Appointment Cancelled Successfully!");
@@ -2260,7 +3440,29 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
                     }
                     else if (option2 == 3)
                     {
-                        ViewDoctors(Doctors, DoctorSpecialization, DoctorCount);
+                        // Simple doctor list for patients
+                        useCyanColour();
+                        cout << "\n╔════════════════════════════════════════════════════════╗" << endl;
+                        useMagentaColour();
+                        cout << "║              👨‍⚕️  AVAILABLE DOCTORS  👨‍⚕️               ║" << endl;
+                        useCyanColour();
+                        cout << "╠════════════════════════════════════════════════════════╣" << endl;
+                        
+                        for (int i = 0; i < DoctorCount; i++)
+                        {
+                            useGreenColour();
+                            cout << "║  " << (i + 1) << ". Dr. " << left << setw(20) << Doctors[i];
+                            useYellowColour();
+                            string spec = DoctorSpecialization[i].empty() ? "General" : DoctorSpecialization[i];
+                            cout << "[" << setw(18) << spec << "]";
+                            useCyanColour();
+                            cout << " ║" << endl;
+                        }
+                        
+                        useCyanColour();
+                        cout << "╚════════════════════════════════════════════════════════╝" << endl;
+                        useWhiteColour();
+                        
                         string name = PromptLine("Enter the doctor's name to view details of Dr. ");
                         for (int i = 0; i < DoctorCount; i++)
                         {
@@ -2288,6 +3490,37 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
                     }
                     else if (option2 == 5)
                     {
+                        // View Appointment History
+                        showPatientHistory(result, appointmentPatient, appointmentDoctor, appointmentDate,
+                                           appointmentTime, appointmentStatus, appointmentEmergency, appointmentCount);
+                    }
+                    else if (option2 == 6)
+                    {
+                        // Book Emergency Appointment
+                        string PTName = PromptLine("Enter Patient Name : ");
+                        string date = PromptLine("Enter the date for EMERGENCY appointment (YYYY-MM-DD) : ");
+                        string DocName = PromptLine("Enter The Doctor's Name : ");
+                        if (BookAppointment(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime,
+                                             appointmentStatus, appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                                             appointmentCount,
+                                             Doctors, DoctorStartTime, DoctorEndTime, DoctorCount,
+                                             PTName, DocName, date, true))
+                        {
+                            useRedColour();
+                            showSuccess("🚨 EMERGENCY Appointment Booked Successfully!");
+                            useYellowColour();
+                            cout << "⚠️ Emergency Fee: Rs." << EMERGENCY_CONSULTATION_FEE << endl;
+                            useGreenColour();
+                            cout << "ℹ Dr. " << DocName << " on " << date << endl;
+                            useWhiteColour();
+                        }
+                        else
+                        {
+                            showError("Emergency Appointment booking failed.");
+                        }
+                    }
+                    else if (option2 == 7)
+                    {
                         break;
                     }
                     clearScreen();
@@ -2308,16 +3541,31 @@ void PatientInterface(StrArray &PatientName, StrArray &PatientPassword, StrArray
 }
 
 // Shows the Admin' menu And all the Features
-void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorStartTime,
+void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &DoctorEmail, StrArray &DoctorPhone,
+                    StrArray &DoctorAddress, StrArray &DoctorQualification, StrArray &DoctorStartTime,
                     StrArray &DoctorEndTime, StrArray &DocAvailableDays, StrArray &DoctorSpecialization, int &DoctorCount,
                     StrArray &PendingDoctorNames, StrArray &PendingDoctorPasswords, int &PendingDoctorRequestCount,
-                    StrArray &Receptionist, int &ReceptionistCount,
-                    StrArray &Pharmacist, int &PharmacistCount)
+                    StrArray &Receptionist, StrArray &ReceptionistPassword, StrArray &ReceptionistEmail,
+                    StrArray &ReceptionistPhone, StrArray &ReceptionistAddress, int &ReceptionistCount,
+                    StrArray &Pharmacist, StrArray &PharmacistPassword, StrArray &PharmacistEmail,
+                    StrArray &PharmacistPhone, StrArray &PharmacistAddress, int &PharmacistCount,
+                    const StrArray &Medicines, const IntArray &MedicineStock,
+                    const IntArray &MedicineReorderLevel, int MedicineCount,
+                    const StrArray &appointmentStatus, const StrArray &appointmentDate,
+                    const StrArray &appointmentEmergency, int appointmentCount,
+                    int patientCount)
 {
     int option = 0;
-    while (option != 11)
+    while (option != 13)
     {
         printHeader();
+        
+        // Display quick stats
+        displayQuickStats(patientCount, appointmentCount, DoctorCount, MedicineCount, appointmentStatus, appointmentCount);
+        
+        // Check and show low stock alert
+        checkLowStockMedicines(Medicines, MedicineStock, MedicineReorderLevel, MedicineCount);
+        
         string adminOptions[] = {
             "➕ Add Doctors",
             "➖ Remove Doctors",
@@ -2329,29 +3577,45 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
             "👀 View Receptionist",
             "👀 View Pharmacist",
             "📋 Review Doctor Signup Requests",
+            "⚠️ View Low Stock Medicines",
+            "💰 Generate Revenue Report",
             "🚪 Log Out"
         };
-        displayMenuBox("🔐  ADMIN CONTROL PANEL  🔐", adminOptions, 11);
-        cin >> option;
+        displayMenuBox("🔐  ADMIN CONTROL PANEL  🔐", adminOptions, 13);
+        option = SafeIntInput("Enter your choice: ", 1, 13);
         if (option == 1)
         {
             for (int i = DoctorCount; i < UserSize; i++)
             {
-                Doctors[i] = PromptLine("Enter the Doctor Name : ");
-                DoctorSpecialization[i] = PromptLine("Enter the Doctor Specialization : ");
+                useGreenColour();
+                cout << "\n=== Add New Doctor ===" << endl;
+                useWhiteColour();
+                
+                Doctors[i] = PromptLine("Enter the Doctor Name: ");
+                DoctorPassword[i] = PromptLine("Enter password for doctor: ");
+                DoctorEmail[i] = PromptLine("Enter email address: ");
+                DoctorPhone[i] = PromptLine("Enter phone number (e.g., +92-300-1234567): ");
+                DoctorAddress[i] = PromptLine("Enter address: ");
+                DoctorQualification[i] = PromptLine("Enter qualification (e.g., MBBS, FCPS): ");
+                DoctorSpecialization[i] = PromptLine("Enter the Doctor Specialization: ");
                 if (DoctorSpecialization[i].empty())
                 {
                     DoctorSpecialization[i] = "General Medicine";
                 }
-                DoctorPassword[i].clear();
-                DoctorStartTime[i].clear();
-                DoctorEndTime[i].clear();
-                DocAvailableDays[i].clear();
+                DoctorStartTime[i] = PromptLine("Enter starting time (e.g., 3PM): ");
+                DoctorEndTime[i] = PromptLine("Enter ending time (e.g., 5PM): ");
+                DocAvailableDays[i] = PromptLine("Enter available days: ");
                 DoctorCount++;
-                int option2;
-                cout << "Press 1 to Enter more doctors " << endl;
-                cout << "Press 0 to Exit " << endl;
-                cin >> option2;
+                
+                // Immediately save to file
+                SaveDoctorsToFile(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                                  DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
+                
+                useGreenColour();
+                cout << "✓ Doctor added successfully!" << endl;
+                useWhiteColour();
+                
+                int option2 = SafeIntInput("Press 1 to Enter more doctors, 0 to Exit: ", 0, 1);
                 if (option2 == 0)
                 {
                     break;
@@ -2370,12 +3634,24 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
                     {
                         Doctors[j] = Doctors[j + 1];
                         DoctorPassword[j] = DoctorPassword[j + 1];
+                        DoctorEmail[j] = DoctorEmail[j + 1];
+                        DoctorPhone[j] = DoctorPhone[j + 1];
+                        DoctorAddress[j] = DoctorAddress[j + 1];
+                        DoctorQualification[j] = DoctorQualification[j + 1];
                         DoctorStartTime[j] = DoctorStartTime[j + 1];
                         DoctorEndTime[j] = DoctorEndTime[j + 1];
                         DocAvailableDays[j] = DocAvailableDays[j + 1];
                         DoctorSpecialization[j] = DoctorSpecialization[j + 1];
                     }
                     DoctorCount--;
+                    
+                    // Immediately save to file
+                    SaveDoctorsToFile(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                                      DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
+                    
+                    useGreenColour();
+                    cout << "✓ Doctor removed successfully!" << endl;
+                    useWhiteColour();
                     break;
                 }
             }
@@ -2384,12 +3660,25 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
         {
             for (int i = ReceptionistCount; i < UserSize; i++)
             {
-                Receptionist[i] = PromptLine("Enter the Receptionist Name : ");
+                useGreenColour();
+                cout << "\n=== Add New Receptionist ===" << endl;
+                useWhiteColour();
+                
+                Receptionist[i] = PromptLine("Enter the Receptionist Name: ");
+                ReceptionistPassword[i] = PromptLine("Enter password for receptionist: ");
+                ReceptionistEmail[i] = PromptLine("Enter email address: ");
+                ReceptionistPhone[i] = PromptLine("Enter phone number (e.g., +92-300-1234567): ");
+                ReceptionistAddress[i] = PromptLine("Enter address: ");
                 ReceptionistCount++;
-                int option2;
-                cout << "Press 1 for Entering more Receptionist " << endl;
-                cout << "Press 0 to Exit " << endl;
-                cin >> option2;
+                
+                // Immediately save to file
+                SaveReceptionistsToFile(Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount);
+                
+                useGreenColour();
+                cout << "✓ Receptionist added successfully!" << endl;
+                useWhiteColour();
+                
+                int option2 = SafeIntInput("Press 1 for Entering more Receptionists, 0 to Exit: ", 0, 1);
                 if (option2 == 0)
                 {
                     break;
@@ -2407,8 +3696,19 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
                     for (int j = i; j < ReceptionistCount - 1; j++)
                     {
                         Receptionist[j] = Receptionist[j + 1];
+                        ReceptionistPassword[j] = ReceptionistPassword[j + 1];
+                        ReceptionistEmail[j] = ReceptionistEmail[j + 1];
+                        ReceptionistPhone[j] = ReceptionistPhone[j + 1];
+                        ReceptionistAddress[j] = ReceptionistAddress[j + 1];
                     }
                     ReceptionistCount--;
+                    
+                    // Immediately save to file
+                    SaveReceptionistsToFile(Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount);
+                    
+                    useGreenColour();
+                    cout << "✓ Receptionist removed successfully!" << endl;
+                    useWhiteColour();
                     break;
                 }
             }
@@ -2417,12 +3717,25 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
         {
             for (int i = PharmacistCount; i < UserSize; i++)
             {
-                Pharmacist[i] = PromptLine("Enter the Pharmacist Name : ");
+                useGreenColour();
+                cout << "\n=== Add New Pharmacist ===" << endl;
+                useWhiteColour();
+                
+                Pharmacist[i] = PromptLine("Enter the Pharmacist Name: ");
+                PharmacistPassword[i] = PromptLine("Enter password for pharmacist: ");
+                PharmacistEmail[i] = PromptLine("Enter email address: ");
+                PharmacistPhone[i] = PromptLine("Enter phone number (e.g., +92-300-1234567): ");
+                PharmacistAddress[i] = PromptLine("Enter address: ");
                 PharmacistCount++;
-                int option2;
-                cout << "Press 1 for Entering more Pharmacists " << endl;
-                cout << "Press 0 to Exit " << endl;
-                cin >> option2;
+                
+                // Immediately save to file
+                SavePharmacistsToFile(Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount);
+                
+                useGreenColour();
+                cout << "✓ Pharmacist added successfully!" << endl;
+                useWhiteColour();
+                
+                int option2 = SafeIntInput("Press 1 for Entering more Pharmacists, 0 to Exit: ", 0, 1);
                 if (option2 == 0)
                 {
                     break;
@@ -2440,30 +3753,53 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
                     for (int j = i; j < PharmacistCount - 1; j++)
                     {
                         Pharmacist[j] = Pharmacist[j + 1];
+                        PharmacistPassword[j] = PharmacistPassword[j + 1];
+                        PharmacistEmail[j] = PharmacistEmail[j + 1];
+                        PharmacistPhone[j] = PharmacistPhone[j + 1];
+                        PharmacistAddress[j] = PharmacistAddress[j + 1];
                     }
                     PharmacistCount--;
+                    
+                    // Immediately save to file
+                    SavePharmacistsToFile(Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount);
+                    
+                    useGreenColour();
+                    cout << "✓ Pharmacist removed successfully!" << endl;
+                    useWhiteColour();
                     break;
                 }
             }
         }
         else if (option == 7)
         {
-            ViewDoctors(Doctors, DoctorSpecialization, DoctorCount);
+            ViewDoctors(Doctors, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                       DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
         }
         else if (option == 8)
         {
-            ViewReceptionist(Receptionist, ReceptionistCount);
+            ViewReceptionist(Receptionist, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount);
         }
         else if (option == 9)
         {
-            ViewPharmacist(Pharmacist, PharmacistCount);
+            ViewPharmacist(Pharmacist, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount);
         }
         else if (option == 10)
         {
             ReviewDoctorSignupRequests(PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                                      Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
+                                      Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                                      DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount);
         }
         else if (option == 11)
+        {
+            // View Low Stock Medicines
+            displayLowStockReport(Medicines, MedicineStock, MedicineReorderLevel, MedicineCount);
+        }
+        else if (option == 12)
+        {
+            // Generate Revenue Report
+            generateRevenueReport(appointmentStatus, appointmentDate, appointmentEmergency, appointmentCount);
+        }
+        else if (option == 13)
         {
             break;
         }
@@ -2473,8 +3809,8 @@ void AdminInterface(StrArray &Doctors, StrArray &DoctorPassword, StrArray &Docto
 
 // Shows Receptionists menu
 void ReceptionInterface(StrArray &appointmentPatient, StrArray &appointmentDoctor, StrArray &appointmentDate,
-                        StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &PrescriptionMed, StrArray &MedicineTimes,
-                        StrArray &PrescriptionDays, int &appointmentCount,
+                        StrArray &appointmentTime, StrArray &appointmentStatus, StrArray &appointmentEmergency,
+                        StrArray &PrescriptionMed, StrArray &MedicineTimes, StrArray &PrescriptionDays, int &appointmentCount,
                         StrArray &PatientName, StrArray &PatientPassword, StrArray &PatientAge, int &Patientcount,
                         StrArray &Doctors, StrArray &DoctorStartTime, StrArray &DoctorEndTime, int DoctorCount)
 {
@@ -2491,17 +3827,17 @@ void ReceptionInterface(StrArray &appointmentPatient, StrArray &appointmentDocto
             "🚪 Log Out"
         };
         displayMenuBox("📝  RECEPTIONIST DASHBOARD  📝", receptionOptions, 6);
-        cin >> option;
+        option = SafeIntInput("Enter your choice: ", 1, 6);
         if (option == 1)
         {
             string PTName = PromptLine("Enter Patient Name : ");
             string date = PromptLine("Enter the date for appointment (YYYY-MM-DD) : ");
             string DocName = PromptLine("Enter The Doctor's Name : ");
             if (BookAppointment(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime,
-                                 appointmentStatus, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                                 appointmentStatus, appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays,
                                  appointmentCount,
                                  Doctors, DoctorStartTime, DoctorEndTime, DoctorCount,
-                                 PTName, DocName, date))
+                                 PTName, DocName, date, false))
             {
                 cout << "Appointment Booked Successfully. " << endl;
             }
@@ -2547,7 +3883,7 @@ void ReceptionInterface(StrArray &appointmentPatient, StrArray &appointmentDocto
             string PTName = PromptLine("Enter Patient Name : ");
             string date = PromptLine("Enter the date for appointment (YYYY-MM-DD) : ");
             if (CancelAppointment(appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime,
-                                  appointmentStatus, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                                  appointmentStatus, appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays,
                                   appointmentCount, PTName, date))
             {
                 cout << "Appointment Cancelled Successfully. " << endl;
@@ -2584,7 +3920,7 @@ void PharmacistInterface(const StrArray &PrescriptionMed, const StrArray &Medici
             "🚪 Log Out"
         };
         displayMenuBox("💊  PHARMACIST DASHBOARD  💊", pharmacistOptions, 3);
-        cin >> option;
+        option = SafeIntInput("Enter your choice: ", 1, 3);
         if (option == 1)
         {
             ViewPrescriptions(PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount);
@@ -2608,15 +3944,18 @@ void loginScreen()
     int padding = getCenterPadding(width);
     string pad = string(padding, ' ');
     
+    cout << pad;
     drawBox(width);
+    cout << pad;
     useGreenColour();
     drawBoxSides("LOGIN CREDENTIALS", width);
     useCyanColour();
-    cout << pad << "╠";
+    cout << pad << "╚";
     for (int i = 0; i < width - 2; i++)
         cout << "═";
-    cout << "╣" << endl;
+    cout << "╝" << endl;
     useWhiteColour();
+    cout << endl;
 }
 
 /*____________________Main Code_______________________*/
@@ -2638,6 +3977,7 @@ int main()
     StrArray appointmentDoctor = {};
     StrArray appointmentTime = {};
     StrArray appointmentStatus = {};
+    StrArray appointmentEmergency = {};  // Track emergency appointments
     StrArray PrescriptionMed = {};
     StrArray MedicineTimes = {};
     StrArray PrescriptionDays = {};
@@ -2645,6 +3985,10 @@ int main()
 
     StrArray Doctors = {};
     StrArray DoctorPassword = {};
+    StrArray DoctorEmail = {};
+    StrArray DoctorPhone = {};
+    StrArray DoctorAddress = {};
+    StrArray DoctorQualification = {};
     StrArray DoctorStartTime = {};
     StrArray DoctorEndTime = {};
     StrArray DocAvailableDays = {};
@@ -2656,8 +4000,17 @@ int main()
     int PendingDoctorRequestCount = 0;
 
     StrArray Receptionist = {};
+    StrArray ReceptionistPassword = {};
+    StrArray ReceptionistEmail = {};
+    StrArray ReceptionistPhone = {};
+    StrArray ReceptionistAddress = {};
     int ReceptionistCount = 0;
+    
     StrArray Pharmacist = {};
+    StrArray PharmacistPassword = {};
+    StrArray PharmacistEmail = {};
+    StrArray PharmacistPhone = {};
+    StrArray PharmacistAddress = {};
     int PharmacistCount = 0;
 
     StrArray Medicines = {};
@@ -2670,15 +4023,20 @@ int main()
     StrArray HistoryDetails = {};
     int HistoryCount = 0;
 
-    InitializeDefaults(Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
-                       Receptionist, ReceptionistCount, Pharmacist, PharmacistCount, Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount);
+    InitializeDefaults(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                       DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                       Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                       Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
+                       Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount);
 
     LoadAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                 appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                 PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                 Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                 HistoryPatients, HistoryDetails, HistoryCount);
 
@@ -2697,15 +4055,21 @@ int main()
             string AdminPass = PromptLine("Enter Password : ");
             if (AdminPass == "123")
             {
-                AdminInterface(Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                AdminInterface(Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                               DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                                PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                               Receptionist, ReceptionistCount, Pharmacist, PharmacistCount);
+                               Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                               Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
+                               Medicines, MedicineStock, MedicineReorderLevel, MedicineCount,
+                               appointmentStatus, appointmentDate, appointmentEmergency, appointmentCount, Patientcount);
                 SaveAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                             appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                            PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                            Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                            appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                            Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                            DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                             PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                            Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                            Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                            Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                             Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                             HistoryPatients, HistoryDetails, HistoryCount);
             }
@@ -2726,13 +4090,15 @@ int main()
                                  PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount);
                 SaveAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                             appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                            PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                            Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                            appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                            Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                            DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                             PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                            Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                            Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                            Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                             Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                             HistoryPatients, HistoryDetails, HistoryCount);
-            }
+        }
             
         
         if (option == 3)
@@ -2744,16 +4110,18 @@ int main()
             if (ReceptionPass == "12345")
             {
                 ReceptionInterface(appointmentPatient, appointmentDoctor, appointmentDate,
-                                    appointmentTime, appointmentStatus, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                                    appointmentTime, appointmentStatus, appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays,
                                     appointmentCount,
                                     PatientName, PatientPassword, PatientAge, Patientcount,
                                     Doctors, DoctorStartTime, DoctorEndTime, DoctorCount);
                 SaveAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                             appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                            PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                            Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                            appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                            Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                            DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                             PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                            Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                            Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                            Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                             Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                             HistoryPatients, HistoryDetails, HistoryCount);
             }
@@ -2768,16 +4136,19 @@ int main()
             loginScreen();
             PatientInterface(PatientName, PatientPassword, PatientAge, Patientcount,
                              appointmentPatient, appointmentDoctor, appointmentDate,
-                             appointmentTime, appointmentStatus, PrescriptionMed, MedicineTimes, PrescriptionDays,
+                             appointmentTime, appointmentStatus, appointmentEmergency, 
+                             PrescriptionMed, MedicineTimes, PrescriptionDays,
                              appointmentCount,
                              Doctors, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                              Medicines, MedicinePrices, MedicineCount);
             SaveAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                         appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                        PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                        Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                        appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                        Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                        DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                         PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                        Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                        Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                        Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                         Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                         HistoryPatients, HistoryDetails, HistoryCount);
         }
@@ -2793,10 +4164,12 @@ int main()
                                      Medicines, MedicinePrices, MedicineCount);
                 SaveAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                             appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                            PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                            Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                            appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                            Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                            DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                             PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                            Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                            Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                            Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                             Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                             HistoryPatients, HistoryDetails, HistoryCount);
             }
@@ -2812,13 +4185,14 @@ int main()
             cout << endl;
             SaveAllData(PatientName, PatientPassword, PatientAge, Patientcount,
                         appointmentPatient, appointmentDoctor, appointmentDate, appointmentTime, appointmentStatus,
-                        PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
-                        Doctors, DoctorPassword, DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
+                        appointmentEmergency, PrescriptionMed, MedicineTimes, PrescriptionDays, appointmentCount,
+                        Doctors, DoctorPassword, DoctorEmail, DoctorPhone, DoctorAddress, DoctorQualification,
+                        DoctorStartTime, DoctorEndTime, DocAvailableDays, DoctorSpecialization, DoctorCount,
                         PendingDoctorNames, PendingDoctorPasswords, PendingDoctorRequestCount,
-                        Receptionist, ReceptionistCount, Pharmacist, PharmacistCount,
+                        Receptionist, ReceptionistPassword, ReceptionistEmail, ReceptionistPhone, ReceptionistAddress, ReceptionistCount,
+                        Pharmacist, PharmacistPassword, PharmacistEmail, PharmacistPhone, PharmacistAddress, PharmacistCount,
                         Medicines, MedicinePrices, MedicineStock, MedicineReorderLevel, MedicineCount,
                         HistoryPatients, HistoryDetails, HistoryCount);
-            break;
         }
         clearScreen();
     }

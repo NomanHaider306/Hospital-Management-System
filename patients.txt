@@ -1,2 +1,5 @@
 Noma n	Nomi1	19
 Noman Haider	Noman1	19
+Fatima	Fat1	20
+AbuBakar	A123	19
+Amir	12	19
